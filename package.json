@@ -1,0 +1,87 @@
+{
+  "name": "shopify-inventoryinator",
+  "version": "1.0.0",
+  "description": "Local Shopify order fulfillment tracker",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "rebuild": "npx @electron/rebuild -f -w better-sqlite3",
+    "copy-vue": "node -e \"require('fs').copyFileSync('node_modules/vue/dist/vue.global.js', 'src/renderer/vue.js')\"",
+    "postinstall": "npm run copy-vue && npx @electron/rebuild -f -w better-sqlite3",
+    "build:win": "electron-builder --win",
+    "build:linux": "electron-builder --linux",
+    "release": "electron-builder --publish always",
+    "test": "jest"
+  },
+  "keywords": [
+    "shopify",
+    "inventory",
+    "electron",
+    "vue"
+  ],
+  "author": "ILikeMyChickenBurnt",
+  "license": "SEE LICENSE IN LICENSE",
+  "devDependencies": {
+    "@electron/rebuild": "^4.0.2",
+    "electron": "^40.0.0",
+    "electron-builder": "^26.4.0",
+    "jest": "^30.2.0",
+    "sql.js": "^1.13.0"
+  },
+  "dependencies": {
+    "@apollo/client": "^3.8.8",
+    "better-sqlite3": "^12.6.2",
+    "dotenv": "^16.3.1",
+    "electron-log": "^5.4.3",
+    "electron-updater": "^6.7.3",
+    "graphql": "^16.8.1",
+    "node-fetch": "^2.7.0",
+    "vue": "^3.4.3"
+  },
+  "build": {
+    "appId": "com.ilikemychickenburnt.shopify-inventoryinator",
+    "productName": "Shopify Inventoryinator",
+    "publish": {
+      "provider": "github",
+      "owner": "ILikeMyChickenBurnt",
+      "repo": "ShopifyInventoryinator"
+    },
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "node_modules/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "data/",
+        "to": "data/",
+        "filter": [
+          "!*.json",
+          "!*.db",
+          "!*.db-shm",
+          "!*.db-wal"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "icon": "build/icon.png",
+      "category": "Office"
+    }
+  }
+}

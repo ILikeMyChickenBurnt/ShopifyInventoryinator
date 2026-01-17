@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+
+# Copied vendor files (copied from node_modules during install)
+src/renderer/vue.js
+
+# Build output
+dist/
+out/
+
+# Database files
+data/*.db
+data/*.db-shm
+data/*.db-wal
+
+# Config with credentials (shopify-config.json, config.json)
+data/*.json
+
+# Environment variables
+.env
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary files
+tmp/
+temp/

@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" 
+        content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' https://cdn.shopify.com data:;">
+  <title>Shopify Inventoryinator</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Loading screen while app initializes -->
+    <div v-if="!appReady" class="app-loading">
+      <div class="loading-content">
+        <div class="loading-spinner"></div>
+        <p>Loading...</p>
+      </div>
+    </div>
+
+    <!-- Main app content (only shown after initialization) -->
+    <template v-else>
+    <!-- Toast notification -->
+    <div v-if="toastMessage" class="toast-notification">
+      {{ toastMessage }}
+    </div>
+
+    <!-- Fulfilled Order Toast (manual dismiss only) -->
+    <div v-if="fulfilledOrderToast" class="fulfilled-order-overlay">
+      <div class="fulfilled-order-toast">
+        <div class="fulfilled-toast-header">
+          <span class="fulfilled-toast-icon">🎉</span>
+          <span class="fulfilled-toast-title">Order Ready!</span>
+        </div>
+        <div class="fulfilled-toast-body">
+          <p><strong>{{ fulfilledOrderToast.orderName }}</strong> has all items made.</p>
+          <p>Open in Shopify to mark as fulfilled and print shipping labels.</p>
+        </div>
+        <div class="fulfilled-toast-link">
+          <input 
+            type="text" 
+            :value="fulfilledOrderToast.shopifyAdminUrl" 
+            readonly 
+            class="link-input"
+            @click="$event.target.select()">
+          <button @click="copyOrderLink" class="btn btn-copy" title="Copy link">
+            📋
+          </button>
+        </div>
+        <div class="fulfilled-toast-actions">
+          <button 
+            @click="archiveOrderFromToast" 
+            class="btn btn-success">
+            📁 Archive Order
+          </button>
+          <button 
+            @click="dismissFulfilledOrderToast" 
+            class="btn btn-secondary">
+            Dismiss
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Login Screen (when not authenticated) -->
+    <div v-if="!isAuthenticated" class="login-screen">
+      <div class="login-container">
+        <div class="login-header">
+          <h1>📦 Shopify Inventoryinator</h1>
+          <p>Connect to your Shopify store to track order fulfillment</p>
+        </div>
+
+        <!-- Setup: Enter credentials provided by app developer -->
+        <div v-if="needsSetup" class="setup-simple">
+          <h3>🔐 Enter Your Credentials</h3>
+          <div class="setup-content">
+            <div class="prereq-note">
+              <strong>ℹ️ Prerequisite:</strong> Make sure you've installed the app on your Shopify store using the install link that was provided to you.
+            </div>
+            
+            <p>Enter the Client ID and Client Secret that were provided to you:</p>
+            
+            <div class="credentials-form">
+              <div class="form-group">
+                <label for="clientId">Client ID</label>
+                <input 
+                  type="text" 
+                  id="clientId"
+                  v-model="clientIdInput" 
+                  placeholder="Paste your Client ID here"
+                  class="store-input">
+              </div>
+              
+              <div class="form-group">
+                <label for="clientSecret">Client Secret</label>
+                <input 
+                  type="password" 
+                  id="clientSecret"
+                  v-model="clientSecretInput" 
+                  placeholder="Paste your Client Secret here"
+                  class="store-input">
+              </div>
+            </div>
+            
+            <button 
+              @click="saveCredentials" 
+              :disabled="!clientIdInput || !clientSecretInput || savingCredentials"
+              class="btn btn-success btn-full">
+              <span v-if="!savingCredentials">✓ Save & Continue</span>
+              <span v-else>⏳ Saving...</span>
+            </button>
+            
+            <p class="security-note">🔒 Your credentials are stored locally on this computer only.</p>
+          </div>
+        </div>
+
+        <!-- Login form -->
+        <div v-else class="login-form">
+          <div class="form-group">
+            <label for="storeUrl">Your Shopify Store URL</label>
+            <input 
+              type="text" 
+              id="storeUrl"
+              v-model="storeUrlInput" 
+              placeholder="your-store.myshopify.com"
+              @keyup.enter="connectToShopify"
+              :disabled="authLoading"
+              class="store-input">
+            <p class="hint">Enter just the store name (e.g., "my-store") or full URL</p>
+          </div>
+          
+          <button 
+            @click="connectToShopify" 
+            :disabled="authLoading || !storeUrlInput"
+            class="btn btn-connect">
+            <span v-if="!authLoading">🔗 Connect to Shopify</span>
+            <span v-else>⏳ Connecting... (check your browser)</span>
+          </button>
+          
+          <p class="auth-note">
+            A browser window will open for you to authorize the app with Shopify.
+          </p>
+        </div>
+
+        <!-- Error display -->
+        <div v-if="error" class="login-error">
+          ⚠️ {{ error }}
+        </div>
+      </div>
+    </div>
+
+    <!-- Main App (when authenticated) -->
+    <div v-else class="main-app">
+      <!-- Header -->
+      <header class="header">
+        <div class="header-content">
+          <h1>📦 Shopify Inventoryinator</h1>
+          <div class="header-actions">
+            <span class="store-badge">{{ storeUrl }}</span>
+            
+            <!-- Auto-sync controls -->
+            <div class="auto-sync-controls">
+              <label class="auto-sync-toggle" title="Enable automatic background sync">
+                <input 
+                  type="checkbox" 
+                  v-model="autoSyncEnabled"
+                  @change="toggleAutoSync">
+                <span class="toggle-slider"></span>
+                <span class="toggle-label">Auto-sync</span>
+              </label>
+              <div v-if="autoSyncEnabled" class="auto-sync-interval">
+                <input 
+                  type="number" 
+                  v-model.number="autoSyncInterval"
+                  @change="updateAutoSyncInterval"
+                  min="1"
+                  class="interval-input"
+                  title="Sync interval in minutes">
+                <span class="interval-label">min</span>
+              </div>
+              <span v-if="lastSyncTime" class="last-sync-time" :title="'Last synced: ' + lastSyncTime">
+                {{ lastSyncAgo }}
+              </span>
+            </div>
+            
+            <button @click="syncFromShopify" :disabled="loading" class="btn btn-primary">
+              <span v-if="!loading">🔄 Sync from Shopify</span>
+              <span v-else>⏳ Syncing...</span>
+            </button>
+            <button @click="logout" class="btn btn-logout" title="Disconnect">
+              🚪
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <!-- Error Display -->
+      <div v-if="error" class="error-banner">
+        <span>⚠️ {{ error }}</span>
+        <button @click="error = null" class="btn-close">×</button>
+      </div>
+
+      <!-- Success Message -->
+      <div v-if="successMessage" class="success-banner">
+        <span>✓ {{ successMessage }}</span>
+        <button @click="successMessage = null" class="btn-close">×</button>
+      </div>
+
+      <!-- Summary Stats -->
+      <div class="summary">
+        <div class="stat-card">
+          <div class="stat-value">{{ summary.total }}</div>
+          <div class="stat-label">Total Tasks</div>
+        </div>
+        <div class="stat-card active">
+          <div class="stat-value">{{ summary.active }}</div>
+          <div class="stat-label">Active</div>
+        </div>
+        <div class="stat-card completed">
+          <div class="stat-value">{{ summary.completed }}</div>
+          <div class="stat-label">Completed</div>
+        </div>
+      </div>
+
+      <!-- View Mode Toggle -->
+      <div class="view-toggle">
+        <button 
+          @click="viewMode = 'variants'" 
+          :class="['view-btn', { active: viewMode === 'variants' }]">
+          📦 By Product
+        </button>
+        <button 
+          @click="viewMode = 'orders'" 
+          :class="['view-btn', { active: viewMode === 'orders' }]">
+          📋 By Order ({{ orders.length }})
+        </button>
+      </div>
+
+      <!-- VARIANTS VIEW -->
+      <template v-if="viewMode === 'variants'">
+        <!-- Search Bar for Tasks -->
+        <div class="search-bar">
+          <div class="search-input-wrapper">
+            <span class="search-icon">🔍</span>
+            <input 
+              type="text" 
+              v-model="taskSearchQuery"
+              @input="onTaskSearchInput"
+              placeholder="Search by product, variant, or SKU..."
+              class="search-input">
+            <button 
+              v-if="taskSearchQuery" 
+              @click="taskSearchQuery = ''; debouncedTaskSearch = ''"
+              class="search-clear"
+              title="Clear search">
+              ×
+            </button>
+          </div>
+        </div>
+
+        <!-- Filter Tabs -->
+        <div class="filters">
+          <button 
+            @click="filter = 'all'" 
+            :class="['filter-btn', { active: filter === 'all' }]">
+            All ({{ summary.total }})
+          </button>
+          <button 
+            @click="filter = 'active'" 
+            :class="['filter-btn', { active: filter === 'active' }]">
+            Active ({{ summary.active }})
+          </button>
+          <button 
+            @click="filter = 'completed'" 
+            :class="['filter-btn', { active: filter === 'completed' }]">
+            Completed ({{ summary.completed }})
+          </button>
+        </div>
+
+        <!-- Loading State -->
+        <div v-if="loading && tasks.length === 0" class="loading">
+          <div class="spinner"></div>
+          <p>Loading tasks...</p>
+        </div>
+
+    <!-- Task List -->
+    <div v-else class="task-list">
+      <div 
+        v-for="task in filteredTasks" 
+        :key="task.variant_id" 
+        :class="['task-card', task.status]">
+        
+        <!-- Product Image -->
+        <div class="task-image">
+          <img 
+            v-if="task.image_url" 
+            :src="task.image_url" 
+            :alt="task.product_title"
+            loading="lazy">
+          <div v-else class="no-image">📦</div>
+        </div>
+        
+        <!-- Task Info -->
+        <div class="task-info">
+          <h3 class="product-title">{{ task.product_title }}</h3>
+          <p v-if="task.variant_title" class="variant-title">{{ task.variant_title }}</p>
+          <p v-if="task.sku" class="sku">SKU: {{ task.sku }}</p>
+        </div>
+        
+        <!-- Progress Bar -->
+        <div class="task-progress">
+          <div class="progress-row">
+            <div class="progress-numbers">
+              <span class="made">{{ task.made_quantity }}</span>
+              <span class="separator">/</span>
+              <span class="total">{{ task.total_quantity }}</span>
+            </div>
+            <div class="progress-container">
+              <div 
+                class="progress-fill" 
+                :style="{ width: progressPercentage(task) + '%' }">
+              </div>
+            </div>
+            <div class="remaining-badge">
+              <strong>{{ task.remaining_quantity }}</strong> left
+            </div>
+          </div>
+        </div>
+        
+        <!-- Actions -->
+        <div class="task-actions">
+          <!-- Quick increment buttons -->
+          <div class="quick-actions">
+            <button 
+              @click="markMade(task.variant_id, 1)" 
+              :disabled="task.remaining_quantity === 0"
+              class="btn btn-small">
+              +1
+            </button>
+            <button 
+              @click="markMade(task.variant_id, 5)" 
+              :disabled="task.remaining_quantity < 5"
+              class="btn btn-small">
+              +5
+            </button>
+            <button 
+              @click="markMade(task.variant_id, 10)" 
+              :disabled="task.remaining_quantity < 10"
+              class="btn btn-small">
+              +10
+            </button>
+          </div>
+          
+          <!-- Custom quantity input -->
+          <div class="custom-action">
+            <input 
+              type="number" 
+              v-model.number="task.customQty" 
+              min="1" 
+              :max="task.remaining_quantity"
+              placeholder="Custom qty"
+              class="qty-input"
+              @keyup.enter="markMadeCustom(task)">
+            <button 
+              @click="markMadeCustom(task)"
+              :disabled="!task.customQty || task.customQty < 1"
+              class="btn btn-secondary">
+              Mark
+            </button>
+          </div>
+          
+          <!-- Complete/Reset buttons -->
+          <div class="final-actions">
+            <button 
+              @click="markComplete(task.variant_id)" 
+              :disabled="task.remaining_quantity === 0"
+              class="btn btn-success">
+              ✓ Complete All
+            </button>
+            <button 
+              @click="resetTask(task.variant_id)"
+              :disabled="task.made_quantity === 0"
+              class="btn btn-danger">
+              ↺ Reset
+            </button>
+          </div>
+        </div>
+        
+        <!-- Status Badge -->
+        <div :class="['status-badge', task.status]">
+          {{ formatStatus(task.status) }}
+        </div>
+      </div>
+
+      <!-- Empty State -->
+      <div v-if="filteredTasks.length === 0" class="empty-state">
+        <div class="empty-icon">📭</div>
+        <h2>No {{ filter !== 'all' ? filter : '' }} tasks found</h2>
+        <p v-if="tasks.length === 0">Click "Sync from Shopify" to fetch unfulfilled orders.</p>
+        <p v-else>Try selecting a different filter.</p>
+      </div>
+    </div>
+      </template>
+
+      <!-- ORDERS VIEW -->
+      <template v-if="viewMode === 'orders'">
+        <!-- Search Bar for Orders -->
+        <div class="search-bar">
+          <div class="search-input-wrapper">
+            <span class="search-icon">🔍</span>
+            <input 
+              type="text" 
+              v-model="orderSearchQuery"
+              @input="onOrderSearchInput"
+              placeholder="Search by order number, product, or variant..."
+              class="search-input">
+            <button 
+              v-if="orderSearchQuery" 
+              @click="orderSearchQuery = ''; debouncedOrderSearch = ''"
+              class="search-clear"
+              title="Clear search">
+              ×
+            </button>
+          </div>
+        </div>
+
+        <!-- Order Filter Tabs -->
+        <div class="filters orders-filters">
+          <div class="filter-tabs">
+            <button 
+              @click="orderFilter = 'all'" 
+              :class="['filter-btn', { active: orderFilter === 'all' }]">
+              All ({{ orderSummary.total }})
+            </button>
+            <button 
+              @click="orderFilter = 'active'" 
+              :class="['filter-btn', { active: orderFilter === 'active' }]">
+              Active ({{ orderSummary.active }})
+            </button>
+            <button 
+              @click="orderFilter = 'fulfilled'" 
+              :class="['filter-btn', { active: orderFilter === 'fulfilled' }]">
+              Fulfilled ({{ orderSummary.fulfilled }})
+            </button>
+            <button 
+              @click="orderFilter = 'archived'" 
+              :class="['filter-btn archived-tab', { active: orderFilter === 'archived' }]">
+              📁 Archived ({{ orderSummary.archived }})
+            </button>
+          </div>
+          <button 
+            v-if="orderFilter !== 'archived'"
+            @click="archiveAllFulfilled" 
+            :disabled="orderSummary.fulfilled === 0"
+            class="btn btn-archive-all"
+            title="Archive all fulfilled orders">
+            📁 Archive All Fulfilled ({{ orderSummary.fulfilled }})
+          </button>
+        </div>
+
+        <!-- Orders List -->
+        <div class="orders-list">
+          <div 
+            v-for="order in filteredOrders" 
+            :key="order.order_id" 
+            :class="['order-card', order.status]">
+            
+            <!-- Order Header -->
+            <div class="order-header">
+              <div class="order-info">
+                <span class="order-name">{{ order.order_name }}</span>
+                <span class="order-date">{{ formatOrderDate(order.order_date) }}</span>
+              </div>
+              <div class="order-header-actions">
+                <!-- Unarchive button (shown for archived orders) -->
+                <button 
+                  v-if="order.status === 'archived'"
+                  @click="unarchiveOrder(order.order_id)" 
+                  class="btn btn-unarchive"
+                  title="Restore this order to active tracking">
+                  ↩️ Restore
+                </button>
+                <!-- Archive button (shown for non-archived orders) -->
+                <button 
+                  v-else
+                  @click="archiveOrder(order.order_id)" 
+                  :disabled="order.status !== 'fulfilled'"
+                  :class="['btn', 'btn-archive', { disabled: order.status !== 'fulfilled' }]"
+                  :title="order.status === 'fulfilled' ? 'Archive this order' : 'Only fulfilled orders can be archived'">
+                  📁 Archive
+                </button>
+                <div :class="['order-status-badge', order.status]">
+                  {{ formatStatus(order.status) }}
+                </div>
+              </div>
+            </div>
+
+            <!-- Order Progress -->
+            <div class="order-progress">
+              <div class="progress-row">
+                <div class="progress-numbers">
+                  <span class="made">{{ order.fulfilled_items }}</span>
+                  <span class="separator">/</span>
+                  <span class="total">{{ order.total_items }}</span>
+                </div>
+                <div class="progress-container">
+                  <div 
+                    class="progress-fill" 
+                    :style="{ width: orderProgressPercentage(order) + '%' }">
+                  </div>
+                </div>
+                <div class="remaining-badge">
+                  <strong>{{ order.remaining_items }}</strong> left
+                </div>
+              </div>
+            </div>
+
+            <!-- Order Line Items -->
+            <div class="order-line-items">
+              <div 
+                v-for="item in order.lineItems" 
+                :key="item.line_item_id"
+                :class="['line-item', { fulfilled: item.fulfilled_quantity >= item.quantity }]">
+                <div class="line-item-image">
+                  <img 
+                    v-if="item.image_url" 
+                    :src="item.image_url" 
+                    :alt="item.product_title"
+                    loading="lazy">
+                  <div v-else class="no-image-small">📦</div>
+                </div>
+                <div class="line-item-info">
+                  <span class="line-item-title">{{ item.product_title }}</span>
+                  <span v-if="item.variant_title" class="line-item-variant">{{ item.variant_title }}</span>
+                  <span v-if="item.sku" class="line-item-sku">SKU: {{ item.sku }}</span>
+                </div>
+                <div class="line-item-progress">
+                  <span :class="['line-item-qty', { complete: item.fulfilled_quantity >= item.quantity }]">
+                    {{ item.fulfilled_quantity }}/{{ item.quantity }}
+                  </span>
+                  <span v-if="item.fulfilled_quantity >= item.quantity" class="check-mark">✓</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Empty Orders State -->
+          <div v-if="filteredOrders.length === 0" class="empty-state">
+            <div class="empty-icon">📋</div>
+            <h2>No {{ orderFilter !== 'all' ? orderFilter : '' }} orders found</h2>
+            <p v-if="orders.length === 0">Click "Sync from Shopify" to fetch unfulfilled orders.</p>
+            <p v-else>Try selecting a different filter.</p>
+          </div>
+        </div>
+      </template>
+
+    </div>
+    </template>
+  </div>
+
+  <!-- Vue 3 -->
+  <script src="vue.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
