@@ -9,6 +9,9 @@ on:
       - main
       - master
 
+permissions:
+  contents: write
+
 jobs:
   test:
     runs-on: ubuntu-latest
