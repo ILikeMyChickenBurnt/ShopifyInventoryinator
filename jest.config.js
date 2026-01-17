@@ -2,7 +2,6 @@ module.exports = {
   testEnvironment: 'node',
   roots: ['<rootDir>/tests'],
   testMatch: ['**/*.test.js'],
-  setupFilesAfterEnv: ['<rootDir>/tests/setup.js'],
   moduleNameMapper: {
     '^electron$': '<rootDir>/tests/__mocks__/electron.js'
   },
