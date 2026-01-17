@@ -384,7 +384,15 @@ function registerIpcHandlers(ipcMain) {
   ipcMain.handle('get-orders', async (event) => {
     try {
       const orders = getOrdersWithLineItems();
-      return { success: true, data: orders };
+      const storeUrl = getStoreUrl();
+      
+      // Add Shopify admin URL to each order
+      const ordersWithUrls = orders.map(order => ({
+        ...order,
+        shopifyAdminUrl: storeUrl ? `https://${storeUrl}/admin/orders/${extractOrderId(order.order_id)}` : null
+      }));
+      
+      return { success: true, data: ordersWithUrls };
     } catch (error) {
       console.error('Error getting orders:', error);
       return { success: false, error: error.message };

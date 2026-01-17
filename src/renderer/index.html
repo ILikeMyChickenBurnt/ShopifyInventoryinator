@@ -30,28 +30,47 @@
       <div class="fulfilled-order-toast">
         <div class="fulfilled-toast-header">
           <span class="fulfilled-toast-icon">🎉</span>
-          <span class="fulfilled-toast-title">Order Ready!</span>
+          <span class="fulfilled-toast-title">
+            {{ fulfilledOrderToast.orders.length === 1 ? 'Order Ready!' : fulfilledOrderToast.orders.length + ' Orders Ready!' }}
+          </span>
         </div>
         <div class="fulfilled-toast-body">
-          <p><strong>{{ fulfilledOrderToast.orderName }}</strong> has all items made.</p>
-          <p>Open in Shopify to mark as fulfilled and print shipping labels.</p>
-        </div>
-        <div class="fulfilled-toast-link">
-          <input 
-            type="text" 
-            :value="fulfilledOrderToast.shopifyAdminUrl" 
-            readonly 
-            class="link-input"
-            @click="$event.target.select()">
-          <button @click="copyOrderLink" class="btn btn-copy" title="Copy link">
-            📋
-          </button>
+          <p v-if="fulfilledOrderToast.orders.length === 1">
+            <strong>{{ fulfilledOrderToast.orders[0].orderName }}</strong> has all items made.
+          </p>
+          <p v-else>The following orders have all items made:</p>
+          
+          <!-- Order list for multiple orders -->
+          <div v-if="fulfilledOrderToast.orders.length > 1" class="fulfilled-orders-list">
+            <div v-for="order in fulfilledOrderToast.orders" :key="order.orderId" class="fulfilled-order-item">
+              <strong>{{ order.orderName }}</strong>
+              <div class="fulfilled-order-item-actions">
+                <button @click="copyOrderLink(order.shopifyAdminUrl)" class="btn btn-copy btn-sm" title="Copy link">📋</button>
+                <button @click="openShopifyOrder(order.shopifyAdminUrl)" class="btn btn-link btn-sm" title="Open in Shopify">🔗</button>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Single order link input -->
+          <div v-if="fulfilledOrderToast.orders.length === 1" class="fulfilled-toast-link">
+            <input 
+              type="text" 
+              :value="fulfilledOrderToast.orders[0].shopifyAdminUrl" 
+              readonly 
+              class="link-input"
+              @click="$event.target.select()">
+            <button @click="copyOrderLink(fulfilledOrderToast.orders[0].shopifyAdminUrl)" class="btn btn-copy" title="Copy link">
+              📋
+            </button>
+          </div>
+          
+          <p class="fulfilled-toast-hint">Open in Shopify to mark as fulfilled and print shipping labels.</p>
         </div>
         <div class="fulfilled-toast-actions">
           <button 
             @click="archiveOrderFromToast" 
             class="btn btn-success">
-            📁 Archive Order
+            📁 Archive {{ fulfilledOrderToast.orders.length === 1 ? 'Order' : 'All ' + fulfilledOrderToast.orders.length + ' Orders' }}
           </button>
           <button 
             @click="dismissFulfilledOrderToast" 
@@ -472,6 +491,22 @@
                 <span class="order-date">{{ formatOrderDate(order.order_date) }}</span>
               </div>
               <div class="order-header-actions">
+                <!-- Copy Shopify link button -->
+                <button 
+                  v-if="order.shopifyAdminUrl"
+                  @click="copyOrderLink(order.shopifyAdminUrl)" 
+                  class="btn btn-copy btn-sm"
+                  title="Copy Shopify admin link">
+                  📋
+                </button>
+                <!-- Open in Shopify button -->
+                <button 
+                  v-if="order.shopifyAdminUrl"
+                  @click="openShopifyOrder(order.shopifyAdminUrl)" 
+                  class="btn btn-link btn-sm"
+                  title="Open in Shopify">
+                  🔗
+                </button>
                 <!-- Unarchive button (shown for archived orders) -->
                 <button 
                   v-if="order.status === 'archived'"

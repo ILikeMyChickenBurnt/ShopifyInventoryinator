@@ -488,7 +488,7 @@ const App = {
           
           // Check for newly fulfilled orders
           if (result.newlyFulfilledOrders && result.newlyFulfilledOrders.length > 0) {
-            showFulfilledOrderToast(result.newlyFulfilledOrders[0]);
+            showFulfilledOrderToast(result.newlyFulfilledOrders);
           }
         } else {
           error.value = result.error || 'Failed to mark quantity';
@@ -521,7 +521,7 @@ const App = {
           
           // Check for newly fulfilled orders
           if (result.newlyFulfilledOrders && result.newlyFulfilledOrders.length > 0) {
-            showFulfilledOrderToast(result.newlyFulfilledOrders[0]);
+            showFulfilledOrderToast(result.newlyFulfilledOrders);
           }
         } else {
           error.value = result.error || 'Failed to mark complete';
@@ -585,11 +585,16 @@ const App = {
       });
     }
 
-    function showFulfilledOrderToast(order) {
+    function showFulfilledOrderToast(orders) {
+      // Support both single order and array of orders
+      const orderArray = Array.isArray(orders) ? orders : [orders];
+      
       fulfilledOrderToast.value = {
-        orderName: order.order_name,
-        orderId: order.order_id,
-        shopifyAdminUrl: order.shopifyAdminUrl
+        orders: orderArray.map(order => ({
+          orderName: order.order_name,
+          orderId: order.order_id,
+          shopifyAdminUrl: order.shopifyAdminUrl
+        }))
       };
     }
 
@@ -602,9 +607,9 @@ const App = {
       window.api.openExternal(url);
     }
 
-    function copyOrderLink() {
-      if (fulfilledOrderToast.value) {
-        navigator.clipboard.writeText(fulfilledOrderToast.value.shopifyAdminUrl);
+    function copyOrderLink(url) {
+      if (url) {
+        navigator.clipboard.writeText(url);
         toastMessage.value = '✓ Link copied to clipboard!';
         setTimeout(() => {
           toastMessage.value = null;
@@ -635,8 +640,11 @@ const App = {
     }
 
     async function archiveOrderFromToast() {
-      if (fulfilledOrderToast.value && fulfilledOrderToast.value.orderId) {
-        await archiveOrder(fulfilledOrderToast.value.orderId);
+      if (fulfilledOrderToast.value && fulfilledOrderToast.value.orders) {
+        // Archive all orders in the toast
+        for (const order of fulfilledOrderToast.value.orders) {
+          await archiveOrder(order.orderId);
+        }
         fulfilledOrderToast.value = null;
       }
     }
