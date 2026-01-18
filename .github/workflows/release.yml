@@ -52,7 +52,7 @@ jobs:
         run: npm ci
       
       - name: Build Windows
-        run: npm run build:win -- --publish never
+        run: npm run build:win -- --publish onTag
       
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
@@ -81,7 +81,7 @@ jobs:
         run: npm ci
       
       - name: Build Linux
-        run: npm run build:linux -- --publish never
+        run: npm run build:linux -- --publish onTag
       
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
