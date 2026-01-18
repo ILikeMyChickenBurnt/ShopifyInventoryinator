@@ -253,6 +253,11 @@
           :class="['view-btn', { active: viewMode === 'orders' }]">
           📋 By Order ({{ orders.length }})
         </button>
+        <button 
+          @click="viewMode = 'inventory'" 
+          :class="['view-btn', { active: viewMode === 'inventory' }]">
+          📊 Inventory
+        </button>
       </div>
 
       <!-- VARIANTS VIEW -->
@@ -585,6 +590,111 @@
             <h2>No {{ orderFilter !== 'all' ? orderFilter : '' }} orders found</h2>
             <p v-if="orders.length === 0">Click "Sync from Shopify" to fetch unfulfilled orders.</p>
             <p v-else>Try selecting a different filter.</p>
+          </div>
+        </div>
+      </template>
+
+      <!-- INVENTORY VIEW -->
+      <template v-if="viewMode === 'inventory'">
+        <div class="inventory-view">
+          <!-- Inventory Header -->
+          <div class="inventory-header">
+            <div class="inventory-stats" v-if="inventoryStats">
+              <span class="inventory-stat">
+                <span class="stat-value">{{ inventoryStats.total_variants }}</span>
+                <span class="stat-label">Total</span>
+              </span>
+              <span class="inventory-stat in-stock">
+                <span class="stat-value">{{ inventoryStats.in_stock_count }}</span>
+                <span class="stat-label">In Stock</span>
+              </span>
+              <span class="inventory-stat out-of-stock">
+                <span class="stat-value">{{ inventoryStats.out_of_stock_count }}</span>
+                <span class="stat-label">Out of Stock</span>
+              </span>
+            </div>
+          </div>
+
+          <!-- Inventory Search & Filter -->
+          <div class="inventory-controls">
+            <div class="search-bar">
+              <div class="search-input-wrapper">
+                <span class="search-icon">🔍</span>
+                <input 
+                  type="text" 
+                  v-model="inventorySearchQuery"
+                  @input="onInventorySearchInput"
+                  placeholder="Search by product, variant, or SKU..."
+                  class="search-input">
+                <button 
+                  v-if="inventorySearchQuery" 
+                  @click="inventorySearchQuery = ''; debouncedInventorySearch = ''"
+                  class="search-clear"
+                  title="Clear search">
+                  ×
+                </button>
+              </div>
+            </div>
+            <div class="inventory-filter-toggle">
+              <button 
+                @click="inventoryFilter = 'all'" 
+                :class="['filter-btn', { active: inventoryFilter === 'all' }]">
+                All
+              </button>
+              <button 
+                @click="inventoryFilter = 'out-of-stock'" 
+                :class="['filter-btn', 'out-of-stock-btn', { active: inventoryFilter === 'out-of-stock' }]">
+                ⚠️ Out of Stock ({{ inventoryStats?.out_of_stock_count || 0 }})
+              </button>
+              <button 
+                @click="inventoryFilter = 'no-image'" 
+                :class="['filter-btn', 'no-image-btn', { active: inventoryFilter === 'no-image' }]">
+                🖼️ No Image ({{ inventoryNoImageCount }})
+              </button>
+            </div>
+          </div>
+
+          <!-- Inventory Grid -->
+          <div class="inventory-grid">
+            <div 
+              v-for="item in filteredInventory" 
+              :key="item.variant_id" 
+              :class="['inventory-card', { 'out-of-stock': item.inventory_quantity <= 0 }]">
+              <div class="inventory-card-image">
+                <img 
+                  v-if="item.image_url" 
+                  :src="item.image_url" 
+                  :alt="item.product_title"
+                  loading="lazy">
+                <div v-else class="no-image">📦</div>
+              </div>
+              <div class="inventory-card-info">
+                <h3 class="inventory-product-title">{{ item.product_title }}</h3>
+                <span v-if="item.variant_title" class="inventory-variant-title">{{ item.variant_title }}</span>
+                <span v-if="item.sku" class="inventory-sku">SKU: {{ item.sku }}</span>
+              </div>
+              <div class="inventory-card-actions">
+                <button 
+                  @click="copyInventoryLink(item)" 
+                  class="btn btn-copy btn-sm"
+                  title="Copy Shopify admin link">
+                  📋
+                </button>
+              </div>
+              <div class="inventory-card-quantity" :class="{ 'zero': item.inventory_quantity <= 0 }">
+                <span class="quantity-value">{{ item.inventory_quantity }}</span>
+                <span class="quantity-label">in stock</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Empty Inventory State -->
+          <div v-if="filteredInventory.length === 0" class="empty-state">
+            <div class="empty-icon">📊</div>
+            <h2 v-if="inventory.length === 0">No inventory data</h2>
+            <h2 v-else>No matching products</h2>
+            <p v-if="inventory.length === 0">Click "Sync from Shopify" to fetch your product inventory.</p>
+            <p v-else>Try adjusting your search or filter.</p>
           </div>
         </div>
       </template>

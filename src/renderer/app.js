@@ -22,14 +22,23 @@ const App = {
     const tasks = ref([]);
     const orders = ref([]);
     const archivedOrders = ref([]);
+    const inventory = ref([]);
+    const inventoryStats = ref(null);
     const loading = ref(false);
     const error = ref(null);
     const successMessage = ref(null);
     const toastMessage = ref(null);
     const fulfilledOrderToast = ref(null); // For order fulfilled notification
     const filter = ref('active'); // all, active, completed
-    const viewMode = ref('variants'); // 'variants' or 'orders'
+    const viewMode = ref('variants'); // 'variants', 'orders', or 'inventory'
     const orderFilter = ref('active'); // all, active, fulfilled, archived
+    
+    // Inventory state
+    const inventoryFilter = ref('all'); // 'all' or 'out-of-stock'
+    const inventorySearchQuery = ref('');
+    const debouncedInventorySearch = ref('');
+    const inventoryLoading = ref(false);
+    let inventorySearchTimeout = null;
     
     // Auto-sync state
     const autoSyncEnabled = ref(false);
@@ -120,6 +129,38 @@ const App = {
       fulfilled: orders.value.filter(o => o.status === 'fulfilled').length,
       archived: archivedOrders.value.length
     }));
+
+    // Computed: Filtered inventory
+    const filteredInventory = computed(() => {
+      let result = inventory.value;
+      
+      // Apply out-of-stock filter
+      if (inventoryFilter.value === 'out-of-stock') {
+        result = result.filter(item => item.inventory_quantity <= 0);
+      }
+      
+      // Apply no-image filter
+      if (inventoryFilter.value === 'no-image') {
+        result = result.filter(item => !item.image_url);
+      }
+      
+      // Apply search filter
+      if (debouncedInventorySearch.value) {
+        const query = debouncedInventorySearch.value.toLowerCase();
+        result = result.filter(item =>
+          (item.product_title && item.product_title.toLowerCase().includes(query)) ||
+          (item.variant_title && item.variant_title.toLowerCase().includes(query)) ||
+          (item.sku && item.sku.toLowerCase().includes(query))
+        );
+      }
+      
+      return result;
+    });
+
+    // Computed: Count of inventory items without images
+    const inventoryNoImageCount = computed(() => {
+      return inventory.value.filter(item => !item.image_url).length;
+    });
 
     // Save OAuth credentials
     async function saveCredentials() {
@@ -306,7 +347,7 @@ const App = {
     }
 
     async function loadAll() {
-      await Promise.all([loadTasks(), loadOrders(), loadArchivedOrders()]);
+      await Promise.all([loadTasks(), loadOrders(), loadArchivedOrders(), loadInventory()]);
     }
 
     // Auto-sync functions
@@ -448,6 +489,30 @@ const App = {
         debouncedOrderSearch.value = orderSearchQuery.value;
       }, 250);
     }
+
+    function onInventorySearchInput() {
+      if (inventorySearchTimeout) clearTimeout(inventorySearchTimeout);
+      inventorySearchTimeout = setTimeout(() => {
+        debouncedInventorySearch.value = inventorySearchQuery.value;
+      }, 250);
+    }
+
+    async function loadInventory() {
+      try {
+        const result = await window.api.getInventory({
+          outOfStockOnly: false,
+          search: ''
+        });
+        
+        if (result.success) {
+          inventory.value = result.data.inventory;
+          inventoryStats.value = result.data.stats;
+        }
+      } catch (e) {
+        console.error('Error loading inventory:', e);
+      }
+    }
+
 
     async function syncFromShopify() {
       loading.value = true;
@@ -617,6 +682,45 @@ const App = {
       }
     }
 
+    // Build Shopify admin URL for a product variant
+    function getInventoryAdminUrl(item) {
+      if (!storeUrl.value || !item.product_id || !item.variant_id) return null;
+      
+      // Extract numeric IDs from GIDs
+      const productMatch = item.product_id.match(/Product\/(\d+)/);
+      const variantMatch = item.variant_id.match(/ProductVariant\/(\d+)/);
+      
+      if (!productMatch || !variantMatch) return null;
+      
+      const productId = productMatch[1];
+      const variantId = variantMatch[1];
+      
+      return `https://${storeUrl.value}/admin/products/${productId}/variants/${variantId}`;
+    }
+
+    function copyInventoryLink(item) {
+      const url = getInventoryAdminUrl(item);
+      if (url) {
+        navigator.clipboard.writeText(url);
+        toastMessage.value = '✓ Link copied to clipboard!';
+        setTimeout(() => {
+          toastMessage.value = null;
+        }, 2000);
+      } else {
+        toastMessage.value = '⚠️ Could not generate link';
+        setTimeout(() => {
+          toastMessage.value = null;
+        }, 2000);
+      }
+    }
+
+    function openInventoryLink(item) {
+      const url = getInventoryAdminUrl(item);
+      if (url) {
+        window.api.openExternal(url);
+      }
+    }
+
     async function archiveOrder(orderId) {
       error.value = null;
       
@@ -753,6 +857,7 @@ const App = {
       if (lastSyncAgoTimer) clearInterval(lastSyncAgoTimer);
       if (taskSearchTimeout) clearTimeout(taskSearchTimeout);
       if (orderSearchTimeout) clearTimeout(orderSearchTimeout);
+      if (inventorySearchTimeout) clearTimeout(inventorySearchTimeout);
     });
 
     return {
@@ -822,7 +927,18 @@ const App = {
       debouncedTaskSearch,
       debouncedOrderSearch,
       onTaskSearchInput,
-      onOrderSearchInput
+      onOrderSearchInput,
+      // Inventory
+      inventory,
+      inventoryStats,
+      inventoryFilter,
+      inventorySearchQuery,
+      debouncedInventorySearch,
+      filteredInventory,
+      inventoryNoImageCount,
+      onInventorySearchInput,
+      copyInventoryLink,
+      openInventoryLink
     };
   }
 };

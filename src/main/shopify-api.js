@@ -52,6 +52,42 @@ const UNFULFILLED_ORDERS_QUERY = `
   }
 `;
 
+// GraphQL query for fetching all products with inventory levels
+const PRODUCTS_INVENTORY_QUERY = `
+  query GetProductsInventory($cursor: String) {
+    products(first: 100, after: $cursor) {
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      edges {
+        node {
+          id
+          title
+          featuredImage {
+            url
+            altText
+          }
+          variants(first: 100) {
+            edges {
+              node {
+                id
+                title
+                sku
+                inventoryQuantity
+                image {
+                  url
+                  altText
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
 class ShopifyClient {
   constructor(storeUrl, accessToken) {
     if (!storeUrl || !accessToken) {
@@ -280,6 +316,109 @@ class ShopifyClient {
       stats: {
         orderCount: orders.length,
         variantCount: aggregated.length
+      }
+    };
+  }
+
+  /**
+   * Fetch all products with inventory levels
+   */
+  async fetchAllProductsWithInventory() {
+    let allProducts = [];
+    let hasNextPage = true;
+    let cursor = null;
+    let pageCount = 0;
+
+    console.log('Fetching products with inventory from Shopify...');
+
+    while (hasNextPage) {
+      pageCount++;
+      console.log(`Fetching products page ${pageCount}...`);
+      
+      const data = await this.query(PRODUCTS_INVENTORY_QUERY, { cursor });
+      const { products } = data;
+      
+      if (!products || !products.edges) {
+        console.log('No products found');
+        break;
+      }
+      
+      // Extract product nodes from edges
+      const productNodes = products.edges.map(edge => edge.node);
+      allProducts = allProducts.concat(productNodes);
+      
+      // Check pagination
+      hasNextPage = products.pageInfo.hasNextPage;
+      cursor = products.pageInfo.endCursor;
+      
+      console.log(`Fetched ${productNodes.length} products (total so far: ${allProducts.length})`);
+      
+      // Rate limiting: conservative delay between requests
+      if (hasNextPage) {
+        await this.sleep(500);
+      }
+    }
+
+    console.log(`Completed fetching ${allProducts.length} total products in ${pageCount} page(s)`);
+    return allProducts;
+  }
+
+  /**
+   * Extract inventory data from products for storage
+   */
+  extractInventoryForStorage(products) {
+    const inventoryData = [];
+
+    console.log('Extracting inventory data for storage...');
+
+    for (const product of products) {
+      if (!product.variants || !product.variants.edges) {
+        continue;
+      }
+
+      const productImage = product.featuredImage?.url || null;
+
+      for (const variantEdge of product.variants.edges) {
+        const variant = variantEdge.node;
+        
+        // Get the best available image (variant image or product featured image)
+        const variantImage = variant.image?.url || productImage;
+        
+        // Build a display-friendly variant title
+        const variantTitle = variant.title;
+        const displayVariantTitle = (variantTitle && variantTitle !== 'Default Title') 
+          ? variantTitle 
+          : '';
+
+        inventoryData.push({
+          variantId: variant.id,
+          productId: product.id,
+          productTitle: product.title,
+          variantTitle: displayVariantTitle,
+          sku: variant.sku || '',
+          imageUrl: variantImage,
+          inventoryQuantity: variant.inventoryQuantity || 0
+        });
+      }
+    }
+
+    console.log(`Extracted ${inventoryData.length} variants with inventory data`);
+    return inventoryData;
+  }
+
+  /**
+   * Fetch products and extract inventory data
+   */
+  async fetchInventory() {
+    const products = await this.fetchAllProductsWithInventory();
+    const inventoryData = this.extractInventoryForStorage(products);
+    
+    return {
+      products,
+      inventoryData,
+      stats: {
+        productCount: products.length,
+        variantCount: inventoryData.length
       }
     };
   }

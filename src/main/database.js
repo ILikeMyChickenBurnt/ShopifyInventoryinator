@@ -187,6 +187,23 @@ function initDatabase(storeUrl = null) {
     );
   `);
   
+  // Create inventory table for storing product inventory levels
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS inventory (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      variant_id TEXT UNIQUE NOT NULL,
+      product_id TEXT NOT NULL,
+      product_title TEXT NOT NULL,
+      variant_title TEXT NOT NULL,
+      sku TEXT DEFAULT '',
+      image_url TEXT DEFAULT NULL,
+      inventory_quantity INTEGER NOT NULL DEFAULT 0,
+      last_synced_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+  
   // Create indexes
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_variant_id ON tasks(variant_id);
@@ -195,6 +212,8 @@ function initDatabase(storeUrl = null) {
     CREATE INDEX IF NOT EXISTS idx_order_date ON orders(order_date);
     CREATE INDEX IF NOT EXISTS idx_line_order_id ON order_line_items(order_id);
     CREATE INDEX IF NOT EXISTS idx_line_variant_id ON order_line_items(variant_id);
+    CREATE INDEX IF NOT EXISTS idx_inventory_variant_id ON inventory(variant_id);
+    CREATE INDEX IF NOT EXISTS idx_inventory_quantity ON inventory(inventory_quantity);
   `);
   
   console.log('Database initialized successfully');
@@ -971,6 +990,131 @@ function deleteArchivedOrders() {
   return { success: true, deletedCount: orderResult.changes };
 }
 
+/**
+ * Upsert inventory data for a variant
+ */
+function upsertInventory(data) {
+  const stmt = db.prepare(`
+    INSERT INTO inventory (variant_id, product_id, product_title, variant_title, sku, image_url, inventory_quantity, last_synced_at, updated_at)
+    VALUES (@variantId, @productId, @productTitle, @variantTitle, @sku, @imageUrl, @inventoryQuantity, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    ON CONFLICT(variant_id) DO UPDATE SET
+      product_id = @productId,
+      product_title = @productTitle,
+      variant_title = @variantTitle,
+      sku = @sku,
+      image_url = @imageUrl,
+      inventory_quantity = @inventoryQuantity,
+      last_synced_at = CURRENT_TIMESTAMP,
+      updated_at = CURRENT_TIMESTAMP
+  `);
+  
+  stmt.run({
+    variantId: data.variantId,
+    productId: data.productId,
+    productTitle: data.productTitle,
+    variantTitle: data.variantTitle,
+    sku: data.sku || '',
+    imageUrl: data.imageUrl || null,
+    inventoryQuantity: data.inventoryQuantity || 0
+  });
+}
+
+/**
+ * Bulk upsert inventory data
+ */
+function bulkUpsertInventory(inventoryItems) {
+  const upsertStmt = db.prepare(`
+    INSERT INTO inventory (variant_id, product_id, product_title, variant_title, sku, image_url, inventory_quantity, last_synced_at, updated_at)
+    VALUES (@variantId, @productId, @productTitle, @variantTitle, @sku, @imageUrl, @inventoryQuantity, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    ON CONFLICT(variant_id) DO UPDATE SET
+      product_id = @productId,
+      product_title = @productTitle,
+      variant_title = @variantTitle,
+      sku = @sku,
+      image_url = @imageUrl,
+      inventory_quantity = @inventoryQuantity,
+      last_synced_at = CURRENT_TIMESTAMP,
+      updated_at = CURRENT_TIMESTAMP
+  `);
+  
+  const insertMany = db.transaction((items) => {
+    for (const item of items) {
+      upsertStmt.run({
+        variantId: item.variantId,
+        productId: item.productId,
+        productTitle: item.productTitle,
+        variantTitle: item.variantTitle,
+        sku: item.sku || '',
+        imageUrl: item.imageUrl || null,
+        inventoryQuantity: item.inventoryQuantity || 0
+      });
+    }
+  });
+  
+  insertMany(inventoryItems);
+  console.log(`Bulk upserted ${inventoryItems.length} inventory records`);
+}
+
+/**
+ * Get all inventory data, optionally filtered
+ */
+function getAllInventory(options = {}) {
+  const { outOfStockOnly = false, search = '' } = options;
+  
+  let query = `
+    SELECT 
+      *,
+      CASE WHEN inventory_quantity <= 0 THEN 1 ELSE 0 END as is_out_of_stock
+    FROM inventory
+    WHERE 1=1
+  `;
+  
+  const params = {};
+  
+  if (outOfStockOnly) {
+    query += ` AND inventory_quantity <= 0`;
+  }
+  
+  if (search) {
+    query += ` AND (product_title LIKE @search OR variant_title LIKE @search OR sku LIKE @search)`;
+    params.search = `%${search}%`;
+  }
+  
+  query += `
+    ORDER BY 
+      is_out_of_stock DESC,
+      product_title ASC,
+      variant_title ASC
+  `;
+  
+  const stmt = db.prepare(query);
+  return stmt.all(params);
+}
+
+/**
+ * Get inventory summary stats
+ */
+function getInventoryStats() {
+  const stats = db.prepare(`
+    SELECT 
+      COUNT(*) as total_variants,
+      SUM(CASE WHEN inventory_quantity <= 0 THEN 1 ELSE 0 END) as out_of_stock_count,
+      SUM(CASE WHEN inventory_quantity > 0 THEN 1 ELSE 0 END) as in_stock_count,
+      SUM(inventory_quantity) as total_inventory
+    FROM inventory
+  `).get();
+  
+  return stats;
+}
+
+/**
+ * Clear all inventory data
+ */
+function clearAllInventory() {
+  db.prepare('DELETE FROM inventory').run();
+  console.log('All inventory data cleared');
+}
+
 module.exports = {
   initDatabase,
   getAllTasks,
@@ -1004,5 +1148,11 @@ module.exports = {
   unarchiveOrder,
   archiveAllFulfilledOrders,
   unarchiveAllOrders,
-  deleteArchivedOrders
+  deleteArchivedOrders,
+  // Inventory functions
+  upsertInventory,
+  bulkUpsertInventory,
+  getAllInventory,
+  getInventoryStats,
+  clearAllInventory
 };

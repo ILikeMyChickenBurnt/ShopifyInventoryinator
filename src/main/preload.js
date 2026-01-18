@@ -58,5 +58,10 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('get-auto-sync-settings'),
   
   saveAutoSyncSettings: (enabled, intervalMinutes) => 
-    ipcRenderer.invoke('save-auto-sync-settings', enabled, intervalMinutes)
+    ipcRenderer.invoke('save-auto-sync-settings', enabled, intervalMinutes),
+  
+  // Inventory
+  
+  getInventory: (options) => 
+    ipcRenderer.invoke('get-inventory', options)
 });

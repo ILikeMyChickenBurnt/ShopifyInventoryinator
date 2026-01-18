@@ -21,7 +21,11 @@ const {
   archiveOrder,
   unarchiveOrder,
   archiveAllFulfilledOrders,
-  unarchiveAllOrders
+  unarchiveAllOrders,
+  // Inventory functions
+  bulkUpsertInventory,
+  getAllInventory,
+  getInventoryStats
 } = require('./database');
 const { ShopifyClient } = require('./shopify-api');
 const { ShopifyOAuth, REDIRECT_URI } = require('./oauth');
@@ -346,6 +350,12 @@ function registerIpcHandlers(ipcMain) {
       // Ensure order statuses are consistent with their line items
       updateAllOrderStatuses();
       
+      // Also sync inventory data
+      console.log('Syncing inventory data...');
+      const { inventoryData, stats: inventoryStats } = await client.fetchInventory();
+      bulkUpsertInventory(inventoryData);
+      console.log(`Synced ${inventoryStats.variantCount} inventory variants`);
+      
       // Log sync to history
       logSync({
         ordersFetched: stats.orderCount,
@@ -360,7 +370,8 @@ function registerIpcHandlers(ipcMain) {
         data: {
           ordersCount: stats.orderCount,
           variantsCount: stats.variantCount,
-          message: `Synced ${stats.orderCount} orders with ${stats.variantCount} unique variants`
+          inventoryCount: inventoryStats.variantCount,
+          message: `Synced ${stats.orderCount} orders, ${stats.variantCount} task variants, ${inventoryStats.variantCount} inventory items`
         }
       };
     } catch (error) {
@@ -517,6 +528,28 @@ function registerIpcHandlers(ipcMain) {
       };
     } catch (error) {
       console.error('Error saving auto-sync settings:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+
+  /**
+   * Get all inventory data
+   */
+  ipcMain.handle('get-inventory', async (event, options = {}) => {
+    try {
+      const inventory = getAllInventory(options);
+      const stats = getInventoryStats();
+      
+      return { 
+        success: true, 
+        data: {
+          inventory,
+          stats
+        }
+      };
+    } catch (error) {
+      console.error('Error getting inventory:', error);
       return { success: false, error: error.message };
     }
   });
