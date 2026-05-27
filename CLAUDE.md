@@ -97,7 +97,17 @@ To access order data, the app requires **Protected Customer Data Access**:
 
 ## Shopify API Version
 
-Using Admin API version `2024-01`. Update in `src/main/shopify-api.js` if needed.
+**Current:** Admin GraphQL API version `2025-04` (updated April 2026).
+
+The upgrade from `2024-01` included a deliberate modernization of the data ingestion layer:
+- Primary source of "actionable" quantities is now `FulfillmentOrder` + `FulfillmentOrderLineItem.remainingQuantity`.
+- Legacy `orders` query + `fulfillableQuantity` path is retained for reference/fallback.
+- Inventory still uses the simple `inventoryQuantity` scalar (with notes that `InventoryLevel.quantities` is the modern model).
+
+See the detailed plan and rationale in the session plan file:
+`sessions/.../019e667e-944e-7bd1-95cd-aba820e00943/plan.md`
+
+Update the version constant and related queries in `src/main/shopify-api.js`.
 
 ## Security Considerations
 

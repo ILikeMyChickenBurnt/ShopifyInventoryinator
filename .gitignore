@@ -36,3 +36,7 @@ Thumbs.db
 # Temporary files
 tmp/
 temp/
+
+# Grok Build TUI / local AI assistant configuration (project-scoped)
+# This includes local MCP servers, installed plugins, and .grok/config.toml
+.grok/

@@ -97,6 +97,52 @@ For each new merchant:
    - Enter their store URL and click "Connect to Shopify"
    - Authorize the app in the browser popup
 
+---
+
+## API Version & Data Model Upgrades (for Developers)
+
+The app uses Shopify's Admin GraphQL API. As of v1.2+ the version is `2025-04`.
+
+### Current State (Post-2026 Modernization)
+- Primary data source for "what still needs to be made" → `FulfillmentOrder` + `FulfillmentOrderLineItem.remainingQuantity`
+- This correctly handles holds, scheduled fulfillments, and location/shipping zone rules that the old `fulfillableQuantity` path could miss or under-report.
+- Inventory still uses the simple `ProductVariant.inventoryQuantity` (legacy convenience field). The modern `InventoryLevel.quantities` model is noted for future work.
+
+### Performing Future API Upgrades
+
+1. **Research**
+   - Review the [Shopify Developer Changelog](https://shopify.dev/changelog) filtered by Admin GraphQL + the target version.
+   - Pay special attention to `FulfillmentOrder`, `FulfillmentOrderLineItem.remainingQuantity`, `orders` query filters, and inventory models.
+
+2. **Update the Version Constant**
+   - Change `SHOPIFY_API_VERSION` in `src/main/shopify-api.js`.
+   - Add a detailed comment block explaining what was validated.
+
+3. **Validate Queries**
+   - Use the Shopify GraphQL Explorer (or the project's configured Shopify MCP skill against the dev store) with the exact queries from the file.
+   - Compare counts and `remainingQuantity` / `fulfillableQuantity` values between the old and new versions on the same store data.
+
+4. **Preserve Transformation Contract**
+   - Any new ingestion path **must** produce the same shapes for:
+     - `aggregated` items (`variantId, totalQuantity, productTitle, ...`)
+     - `ordersForStorage` + line items
+   - The entire allocation, archiving, and progress engine depends on this contract.
+
+5. **Testing**
+   - Capture a baseline sync on a real dev store with varied order states (including holds/scheduled if possible).
+   - Switch to the new queries/version.
+   - Compare side-by-side (order counts, variant totals, specific line item remaining quantities).
+   - Fully exercise mark-made, reset, archive, unarchive, and the Orders view.
+
+6. **Documentation**
+   - Update `CLAUDE.md`.
+   - Update this section (or create `docs/API_VERSIONS.md`) with the new checklist and rationale.
+   - Add an entry to the **next** release notes (do **not** edit prior release notes such as `RELEASE_NOTES_v1.1.0.md`).
+
+Rollback is always possible by reverting the version constant (older versions remain supported for a period).
+
+See the detailed plan and implementation notes from the 2025-04 modernization effort in the repository session plans.
+
 ## Testing
 
 Run the test suite before releasing:
