@@ -304,10 +304,11 @@ function registerIpcHandlers(ipcMain) {
       const client = new ShopifyClient(storeUrl, accessToken);
       
       // Fetch and aggregate data
+      // As of 2025-04 modernization this uses the FulfillmentOrder + remainingQuantity path
       const result = await client.fetchAndAggregate();
       const { aggregated, ordersForStorage, stats } = result;
       
-      console.log(`Synced ${stats.orderCount} orders, ${stats.variantCount} variants`);
+      console.log(`Synced via ${result.source || 'legacy'} — ${stats.orderCount} fulfillment groups, ${stats.variantCount} variants`);
       
       // Get order IDs to skip during sync (archived + orders with progress)
       const skipOrderIds = getOrderIdsToSkipDuringSync();
