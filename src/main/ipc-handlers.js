@@ -334,6 +334,51 @@ function registerIpcHandlers(ipcMain) {
         storedCount++;
       }
       console.log(`Stored ${storedCount} orders with line items (skipped ${skippedCount} preserved)`);
+
+      // ============================================================
+      // TWO-WAY SYNC: Process orders fulfilled directly in Shopify
+      // ============================================================
+      let newlyFulfilledFromShopify = [];
+      try {
+        console.log('[TwoWaySync] Checking for orders fulfilled directly in Shopify...');
+
+        // Use a 90-day lookback for the first implementation (can be made configurable later)
+        const ninetyDaysAgo = new Date();
+        ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+
+        const fulfilledResult = await client.fetchFulfilledOrdersForReconciliation(ninetyDaysAgo.toISOString());
+        const { fulfilledOrdersForStorage } = fulfilledResult;
+
+        if (fulfilledOrdersForStorage && fulfilledOrdersForStorage.length > 0) {
+          console.log(`[TwoWaySync] Found ${fulfilledOrdersForStorage.length} orders fulfilled in Shopify`);
+
+          for (const order of fulfilledOrdersForStorage) {
+            // For Shopify-fulfilled orders, we force the update (bypass normal progress skip)
+            // This implements the policy: trust Shopify as source of truth for completion
+            upsertOrder({
+              ...order,
+              // Ensure it's treated as fully fulfilled
+            });
+
+            for (const lineItem of order.lineItems) {
+              // Force fulfilled_quantity to match quantity for Shopify-completed items
+              upsertOrderLineItem({
+                ...lineItem,
+                fulfilledQuantity: lineItem.quantity || lineItem.fulfilledQuantity
+              });
+            }
+
+            newlyFulfilledFromShopify.push(order);
+          }
+
+          console.log(`[TwoWaySync] Reconciled ${newlyFulfilledFromShopify.length} orders as fulfilled from Shopify`);
+        } else {
+          console.log('[TwoWaySync] No additional Shopify-fulfilled orders found in lookback window');
+        }
+      } catch (twoWayError) {
+        console.error('[TwoWaySync] Error during fulfilled order reconciliation (non-fatal):', twoWayError);
+        // Continue with sync even if two-way part fails
+      }
       
       // Update tasks (variant aggregates) - first upsert from Shopify data
       let updatedCount = 0;
@@ -366,13 +411,26 @@ function registerIpcHandlers(ipcMain) {
       
       console.log('Sync completed successfully');
       
+      const twoWayMessage = newlyFulfilledFromShopify.length > 0 
+        ? ` (reconciled ${newlyFulfilledFromShopify.length} orders fulfilled in Shopify)` 
+        : '';
+
+      // Prepare nicely shaped objects for the existing fulfilled order toast
+      const storeUrl = getStoreUrl();
+      const newlyFulfilledForToast = newlyFulfilledFromShopify.map(o => ({
+        order_id: o.orderId,
+        order_name: o.orderName,
+        shopifyAdminUrl: storeUrl ? `https://${storeUrl}/admin/orders/${extractOrderId(o.orderId)}` : null
+      }));
+
       return { 
         success: true, 
         data: {
           ordersCount: stats.orderCount,
           variantsCount: stats.variantCount,
           inventoryCount: inventoryStats.variantCount,
-          message: `Synced ${stats.orderCount} orders, ${stats.variantCount} task variants, ${inventoryStats.variantCount} inventory items`
+          newlyFulfilledFromShopify: newlyFulfilledForToast,
+          message: `Synced ${stats.orderCount} orders, ${stats.variantCount} task variants, ${inventoryStats.variantCount} inventory items${twoWayMessage}`
         }
       };
     } catch (error) {

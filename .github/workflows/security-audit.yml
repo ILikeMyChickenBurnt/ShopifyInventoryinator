@@ -2,9 +2,15 @@ name: Security Audit
 
 on:
   push:
-    branches: [main, master]
+    branches:
+      - main
+      - master
+      - develop
   pull_request:
-    branches: [main, master]
+    branches:
+      - main
+      - master
+      - develop
   schedule:
     # Run every Monday at 06:15 UTC (after typical Dependabot run)
     - cron: '15 6 * * 1'

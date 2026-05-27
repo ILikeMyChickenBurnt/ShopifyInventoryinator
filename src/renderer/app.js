@@ -523,7 +523,19 @@ const App = {
         const result = await window.api.syncFromShopify();
         
         if (result.success) {
-          successMessage.value = result.data.message || 'Sync completed successfully';
+          let msg = result.data.message || 'Sync completed successfully';
+
+          // Two-way sync feedback from Shopify fulfillments
+          const newlyFulfilled = result.data.newlyFulfilledFromShopify || [];
+          if (newlyFulfilled.length > 0) {
+            // Use the nice existing fulfilled order toast (with archive + Shopify links)
+            showFulfilledOrderToast(newlyFulfilled);
+
+            const names = newlyFulfilled.map(o => o.order_name).join(', ');
+            msg += ` — ${newlyFulfilled.length} order(s) fulfilled in Shopify`;
+          }
+
+          successMessage.value = msg;
           await loadAll();
           updateLastSyncTime();
           
