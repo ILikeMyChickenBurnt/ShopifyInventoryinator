@@ -444,19 +444,45 @@ function upsertOrder(order) {
 
 /**
  * Upsert an order line item
+ * Supports optional fulfilledQuantity for two-way sync (Shopify fulfillment reconciliation)
  */
 function upsertOrderLineItem(lineItem) {
-  const { orderId, lineItemId, variantId, variantTitle, productTitle, sku, imageUrl, quantity } = lineItem;
+  const { 
+    orderId, 
+    lineItemId, 
+    variantId, 
+    variantTitle, 
+    productTitle, 
+    sku, 
+    imageUrl, 
+    quantity,
+    fulfilledQuantity = 0   // for Shopify-fulfilled reconciliation
+  } = lineItem;
   
+  // When fulfilledQuantity is provided and positive, we update it (used for external fulfillment)
   const stmt = db.prepare(`
-    INSERT INTO order_line_items (order_id, line_item_id, variant_id, variant_title, product_title, sku, image_url, quantity)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO order_line_items (order_id, line_item_id, variant_id, variant_title, product_title, sku, image_url, quantity, fulfilled_quantity)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(line_item_id) DO UPDATE SET
       quantity = excluded.quantity,
+      fulfilled_quantity = CASE 
+        WHEN excluded.fulfilled_quantity > 0 THEN excluded.fulfilled_quantity 
+        ELSE order_line_items.fulfilled_quantity 
+      END,
       updated_at = CURRENT_TIMESTAMP
   `);
   
-  return stmt.run(orderId, lineItemId, variantId, variantTitle, productTitle, sku || '', imageUrl || null, quantity);
+  return stmt.run(
+    orderId, 
+    lineItemId, 
+    variantId, 
+    variantTitle, 
+    productTitle, 
+    sku || '', 
+    imageUrl || null, 
+    quantity,
+    fulfilledQuantity || 0
+  );
 }
 
 /**
@@ -755,7 +781,7 @@ function getArchivedOrderIds() {
 function getOrderIdsToSkipDuringSync() {
   const rows = db.prepare(`
     SELECT order_id FROM orders 
-    WHERE status = 'archived' OR fulfilled_items > 0
+    WHERE status IN ('archived', 'fulfilled') OR fulfilled_items > 0
   `).all();
   return new Set(rows.map(r => r.order_id));
 }
@@ -765,7 +791,8 @@ function getOrderIdsToSkipDuringSync() {
  * This ensures archived order quantities don't get added back during sync
  */
 function recalculateTaskTotalsFromOrders() {
-  // Get all variant totals from non-archived order line items
+  // Get all variant totals from non-archived and non-fulfilled order line items
+  // 'fulfilled' orders (completed in Shopify or locally) no longer contribute to active production needs
   const lineItemTotals = db.prepare(`
     SELECT 
       oli.variant_id,
@@ -773,7 +800,7 @@ function recalculateTaskTotalsFromOrders() {
       SUM(oli.fulfilled_quantity) as fulfilled_qty
     FROM order_line_items oli
     JOIN orders o ON oli.order_id = o.order_id
-    WHERE o.status != 'archived'
+    WHERE o.status NOT IN ('archived', 'fulfilled')
     GROUP BY oli.variant_id
   `).all();
   

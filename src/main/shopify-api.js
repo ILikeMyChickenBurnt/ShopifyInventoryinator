@@ -175,6 +175,71 @@ const OPEN_FULFILLMENT_ORDERS_QUERY = `
   }
 `;
 
+/**
+ * Query for recently closed/fulfilled FulfillmentOrders.
+ * Used for two-way sync: detecting orders fulfilled directly in Shopify.
+ * We use a date filter in the query string (e.g. "status:CLOSED updated_at:>2026-...").
+ */
+const RECENTLY_CLOSED_FULFILLMENT_ORDERS_QUERY = `
+  query GetRecentlyClosedFulfillmentOrders($cursor: String, $query: String) {
+    fulfillmentOrders(
+      first: 100,
+      after: $cursor,
+      query: $query,
+      includeClosed: true
+    ) {
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      edges {
+        node {
+          id
+          status
+          orderName
+          order {
+            id
+            createdAt
+            name
+          }
+          lineItems(first: 100) {
+            edges {
+              node {
+                id
+                remainingQuantity
+                totalQuantity
+                sku
+                productTitle
+                variantTitle
+                lineItem {
+                  id
+                }
+                variant {
+                  id
+                  title
+                  sku
+                  image {
+                    url
+                    altText
+                  }
+                  product {
+                    id
+                    title
+                    featuredImage {
+                      url
+                      altText
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
 class ShopifyClient {
   constructor(storeUrl, accessToken) {
     if (!storeUrl || !accessToken) {
@@ -571,6 +636,60 @@ class ShopifyClient {
   }
 
   /**
+   * Fetch recently closed/fulfilled FulfillmentOrders for two-way sync.
+   * These represent orders that were fulfilled directly in Shopify (outside the app).
+   * We use a query string with status:CLOSED + updated_at filter for efficiency.
+   */
+  async fetchRecentlyClosedFulfillmentOrders(sinceDate = null) {
+    let allFOs = [];
+    let hasNextPage = true;
+    let cursor = null;
+    let pageCount = 0;
+
+    // Default to last 90 days if no date provided
+    if (!sinceDate) {
+      const ninetyDaysAgo = new Date();
+      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+      sinceDate = ninetyDaysAgo.toISOString();
+    }
+
+    const queryString = `status:CLOSED updated_at:>=${sinceDate}`;
+
+    console.log(`[TwoWaySync] Fetching recently closed FulfillmentOrders since ${sinceDate} (2025-04 path)...`);
+
+    while (hasNextPage) {
+      pageCount++;
+      console.log(`[TwoWaySync] Fetching closed FOs page ${pageCount}...`);
+
+      const data = await this.query(RECENTLY_CLOSED_FULFILLMENT_ORDERS_QUERY, { 
+        cursor, 
+        query: queryString 
+      });
+      const { fulfillmentOrders } = data;
+
+      if (!fulfillmentOrders || !fulfillmentOrders.edges) {
+        console.log('[TwoWaySync] No closed fulfillment orders found in window');
+        break;
+      }
+
+      const foNodes = fulfillmentOrders.edges.map(edge => edge.node);
+      allFOs = allFOs.concat(foNodes);
+
+      hasNextPage = fulfillmentOrders.pageInfo.hasNextPage;
+      cursor = fulfillmentOrders.pageInfo.endCursor;
+
+      console.log(`[TwoWaySync] Fetched ${foNodes.length} closed FOs (total: ${allFOs.length})`);
+
+      if (hasNextPage) {
+        await this.sleep(500);
+      }
+    }
+
+    console.log(`[TwoWaySync] Completed fetching ${allFOs.length} closed FulfillmentOrders in ${pageCount} page(s)`);
+    return allFOs;
+  }
+
+  /**
    * Aggregate FulfillmentOrderLineItems by variant using remainingQuantity.
    * Produces the same shape as the legacy aggregateByVariant so the rest of
    * the system (tasks, allocation, etc.) continues to work unchanged.
@@ -682,6 +801,16 @@ class ShopifyClient {
   }
 
   /**
+   * Extract per-order data from closed/fulfilled FulfillmentOrders for storage.
+   * These represent work that has been completed directly in Shopify.
+   * We set quantity = totalQuantity and will mark as fully fulfilled on upsert.
+   * This allows the existing order status + task recalculation logic to handle cleanup.
+   */
+  extractFulfilledOrdersForStorageFromFulfillmentOrders(fulfillmentOrders) {
+    return extractFulfilledOrdersForStorageFromFulfillmentOrdersImpl(fulfillmentOrders);
+  }
+
+  /**
    * Modern equivalent of fetchAndAggregate using FulfillmentOrders.
    * Returns data in the same structure so the rest of the app is unaffected.
    */
@@ -701,6 +830,90 @@ class ShopifyClient {
       source: 'fulfillmentOrders-2025-04'
     };
   }
+
+  /**
+   * Fetch fulfilled orders from Shopify for two-way reconciliation.
+   * Returns data in a shape suitable for forcing local orders to 'fulfilled' status.
+   */
+  async fetchFulfilledOrdersForReconciliation(sinceDate = null) {
+    const fos = await this.fetchRecentlyClosedFulfillmentOrders(sinceDate);
+    const fulfilledOrdersForStorage = this.extractFulfilledOrdersForStorageFromFulfillmentOrders(fos);
+
+    return {
+      fulfilledOrdersForStorage,
+      stats: {
+        fulfilledOrderCount: fulfilledOrdersForStorage.length
+      }
+    };
+  }
 }
 
-module.exports = { ShopifyClient };
+/**
+ * Standalone pure function for extracting fulfilled orders.
+ * Exported for easy unit testing.
+ */
+function extractFulfilledOrdersForStorageFromFulfillmentOrdersImpl(fulfillmentOrders) {
+  const ordersData = [];
+  const orderMap = new Map();
+
+  for (const fo of fulfillmentOrders) {
+    if (!fo.lineItems || !fo.lineItems.edges) continue;
+    if (!fo.order) continue;
+
+    if (fo.status !== 'CLOSED') continue;
+
+    const orderKey = fo.order.id;
+    if (!orderMap.has(orderKey)) {
+      orderMap.set(orderKey, {
+        orderId: fo.order.id,
+        orderName: fo.orderName || fo.order.name,
+        orderDate: fo.order.createdAt,
+        totalItems: 0,
+        lineItems: []
+      });
+    }
+
+    const orderEntry = orderMap.get(orderKey);
+
+    for (const liEdge of fo.lineItems.edges) {
+      const li = liEdge.node;
+
+      if (!li.variant || li.totalQuantity <= 0) continue;
+
+      const variantImage = li.variant.image?.url ||
+                          li.variant.product?.featuredImage?.url || null;
+
+      const variantTitle = li.variant.title;
+      const displayVariantTitle = (variantTitle && variantTitle !== 'Default Title') ? variantTitle : '';
+
+      const lineItemForStorage = {
+        orderId: fo.order.id,
+        lineItemId: li.lineItem?.id || li.id,
+        variantId: li.variant.id,
+        variantTitle: displayVariantTitle,
+        productTitle: li.variant.product?.title || li.productTitle || 'Unknown product',
+        sku: li.variant.sku || li.sku || '',
+        imageUrl: variantImage,
+        quantity: li.totalQuantity,
+        fulfilledQuantity: li.totalQuantity
+      };
+
+      orderEntry.lineItems.push(lineItemForStorage);
+      orderEntry.totalItems += li.totalQuantity;
+    }
+  }
+
+  for (const entry of orderMap.values()) {
+    if (entry.lineItems.length > 0) {
+      ordersData.push(entry);
+    }
+  }
+
+  return ordersData;
+}
+
+module.exports = { 
+  ShopifyClient,
+  // Exported for testing the two-way sync extraction logic
+  extractFulfilledOrdersForStorageFromFulfillmentOrders: extractFulfilledOrdersForStorageFromFulfillmentOrdersImpl
+};
