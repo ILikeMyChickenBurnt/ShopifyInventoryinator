@@ -22,21 +22,25 @@
   "author": "ILikeMyChickenBurnt",
   "license": "SEE LICENSE IN LICENSE",
   "devDependencies": {
-    "@electron/rebuild": "^4.0.2",
-    "electron": "^40.0.0",
-    "electron-builder": "^26.4.0",
-    "jest": "^30.2.0",
-    "sql.js": "^1.13.0"
+    "@electron/rebuild": "^4.0.4",
+    "electron": "^40.10.1",
+    "electron-builder": "^26.8.1",
+    "jest": "^30.4.2",
+    "sql.js": "^1.14.1"
   },
   "dependencies": {
     "@apollo/client": "^3.8.8",
-    "better-sqlite3": "^12.6.2",
+    "better-sqlite3": "^12.10.0",
     "dotenv": "^16.3.1",
-    "electron-log": "^5.4.3",
-    "electron-updater": "^6.7.3",
+    "electron-log": "^5.4.4",
+    "electron-updater": "^6.8.3",
     "graphql": "^16.8.1",
     "node-fetch": "^2.7.0",
-    "vue": "^3.4.3"
+    "vue": "^3.5.34"
+  },
+  "overrides": {
+    "minimatch": "^10.0.1",
+    "brace-expansion": "^2.0.3"
   },
   "build": {
     "appId": "com.ilikemychickenburnt.shopify-inventoryinator",
