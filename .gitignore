@@ -40,3 +40,11 @@ temp/
 # Grok Build TUI / local AI assistant configuration (project-scoped)
 # This includes local MCP servers, installed plugins, and .grok/config.toml
 .grok/
+
+# Generated dependency/security audit reports (created during npm audit / outdated analysis)
+audit-report.json
+outdated-report.json
+npm-outdated.json
+*-report.json
+*audit*.json
+*outdated*.json

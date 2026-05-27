@@ -1,0 +1,39 @@
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "America/New_York"
+    open-pull-requests-limit: 10
+    groups:
+      electron-ecosystem:
+        patterns:
+          - "electron"
+          - "electron-builder"
+          - "electron-updater"
+          - "@electron/*"
+      apollo-graphql:
+        patterns:
+          - "@apollo/client"
+          - "graphql"
+      security-patches:
+        applies-to: security-updates
+        patterns:
+          - "*"
+    ignore:
+      # These require manual testing + native module rebuilds on Windows + Linux
+      - dependency-name: "better-sqlite3"
+      # Be cautious with major Electron jumps
+      - dependency-name: "electron"
+        versions: [">=41"]
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "security"
+    reviewers:
+      - "ILikeMyChickenBurnt"
