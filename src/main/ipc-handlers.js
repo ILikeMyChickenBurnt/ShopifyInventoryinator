@@ -28,6 +28,7 @@ const {
   getInventoryStats
 } = require('./database');
 const { ShopifyClient } = require('./shopify-api');
+const { performSync } = require('./sync-orchestrator');
 const { ShopifyOAuth, REDIRECT_URI } = require('./oauth');
 const { 
   getAccessToken, 
@@ -163,7 +164,8 @@ function registerIpcHandlers(ipcMain) {
         data: { message: 'Credentials saved successfully' } 
       };
     } catch (error) {
-      console.error('Error saving credentials:', error);
+      // Security: Do not log the full error object here as it may contain credential-related context
+      console.error('Error saving credentials (sanitized):', error?.message || 'Unknown error');
       return { success: false, error: error.message };
     }
   });
@@ -286,164 +288,35 @@ function registerIpcHandlers(ipcMain) {
   });
 
   /**
-   * Sync from Shopify - fetch unfulfilled orders and update database
+   * Sync from Shopify - thin wrapper around the testable orchestrator
    */
   ipcMain.handle('sync-shopify', async (event) => {
     try {
       console.log('Starting Shopify sync...');
-      
-      // Get credentials from config
+
       const storeUrl = getStoreUrl();
       const accessToken = getAccessToken();
-      
+
       if (!storeUrl || !accessToken) {
         throw new Error('Not authenticated. Please connect to Shopify first.');
       }
-      
-      // Create Shopify client
+
       const client = new ShopifyClient(storeUrl, accessToken);
-      
-      // Fetch and aggregate data
-      // As of 2025-04 modernization this uses the FulfillmentOrder + remainingQuantity path
-      const result = await client.fetchAndAggregate();
-      const { aggregated, ordersForStorage, stats } = result;
-      
-      console.log(`Synced via ${result.source || 'legacy'} — ${stats.orderCount} fulfillment groups, ${stats.variantCount} variants`);
-      
-      // Get order IDs to skip during sync (archived + orders with progress)
-      const skipOrderIds = getOrderIdsToSkipDuringSync();
-      console.log(`Preserving ${skipOrderIds.size} orders (archived or with progress)`);
-      
-      // Clear orders without progress (safe to refresh from Shopify)
-      clearOrdersWithoutProgress();
-      
-      // Store orders and their line items (skip archived and orders with progress)
-      let storedCount = 0;
-      let skippedCount = 0;
-      for (const order of ordersForStorage) {
-        // Skip if this order is archived or has progress
-        if (skipOrderIds.has(order.orderId)) {
-          console.log(`Skipping preserved order: ${order.orderName}`);
-          skippedCount++;
-          continue;
-        }
-        upsertOrder(order);
-        for (const lineItem of order.lineItems) {
-          upsertOrderLineItem(lineItem);
-        }
-        storedCount++;
-      }
-      console.log(`Stored ${storedCount} orders with line items (skipped ${skippedCount} preserved)`);
 
-      // ============================================================
-      // TWO-WAY SYNC: Process orders fulfilled directly in Shopify
-      // ============================================================
-      let newlyFulfilledFromShopify = [];
-      try {
-        console.log('[TwoWaySync] Checking for orders fulfilled directly in Shopify...');
+      // Delegate to the extracted, highly testable orchestrator
+      const syncResult = await performSync(client);
 
-        // Use a 90-day lookback for the first implementation (can be made configurable later)
-        const ninetyDaysAgo = new Date();
-        ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-
-        const fulfilledResult = await client.fetchFulfilledOrdersForReconciliation(ninetyDaysAgo.toISOString());
-        const { fulfilledOrdersForStorage } = fulfilledResult;
-
-        if (fulfilledOrdersForStorage && fulfilledOrdersForStorage.length > 0) {
-          console.log(`[TwoWaySync] Found ${fulfilledOrdersForStorage.length} orders fulfilled in Shopify`);
-
-          for (const order of fulfilledOrdersForStorage) {
-            // For Shopify-fulfilled orders, we force the update (bypass normal progress skip)
-            // This implements the policy: trust Shopify as source of truth for completion
-            upsertOrder({
-              ...order,
-              // Ensure it's treated as fully fulfilled
-            });
-
-            for (const lineItem of order.lineItems) {
-              // Force fulfilled_quantity to match quantity for Shopify-completed items
-              upsertOrderLineItem({
-                ...lineItem,
-                fulfilledQuantity: lineItem.quantity || lineItem.fulfilledQuantity
-              });
-            }
-
-            newlyFulfilledFromShopify.push(order);
-          }
-
-          console.log(`[TwoWaySync] Reconciled ${newlyFulfilledFromShopify.length} orders as fulfilled from Shopify`);
-        } else {
-          console.log('[TwoWaySync] No additional Shopify-fulfilled orders found in lookback window');
-        }
-      } catch (twoWayError) {
-        console.error('[TwoWaySync] Error during fulfilled order reconciliation (non-fatal):', twoWayError);
-        // Continue with sync even if two-way part fails
-      }
-      
-      // Update tasks (variant aggregates) - first upsert from Shopify data
-      let updatedCount = 0;
-      for (const item of aggregated) {
-        upsertTask(item);
-        updatedCount++;
-      }
-      
-      // Recalculate task totals to exclude archived order quantities
-      // This is necessary because Shopify aggregated data includes all orders
-      if (skipOrderIds.size > 0) {
-        recalculateTaskTotalsFromOrders();
-      }
-      
-      // Ensure order statuses are consistent with their line items
-      updateAllOrderStatuses();
-      
-      // Also sync inventory data
-      console.log('Syncing inventory data...');
-      const { inventoryData, stats: inventoryStats } = await client.fetchInventory();
-      bulkUpsertInventory(inventoryData);
-      console.log(`Synced ${inventoryStats.variantCount} inventory variants`);
-      
-      // Log sync to history
-      logSync({
-        ordersFetched: stats.orderCount,
-        variantsUpdated: updatedCount,
-        status: 'success'
-      });
-      
-      console.log('Sync completed successfully');
-      
-      const twoWayMessage = newlyFulfilledFromShopify.length > 0 
-        ? ` (reconciled ${newlyFulfilledFromShopify.length} orders fulfilled in Shopify)` 
-        : '';
-
-      // Prepare nicely shaped objects for the existing fulfilled order toast
-      const storeUrl = getStoreUrl();
-      const newlyFulfilledForToast = newlyFulfilledFromShopify.map(o => ({
-        order_id: o.orderId,
-        order_name: o.orderName,
-        shopifyAdminUrl: storeUrl ? `https://${storeUrl}/admin/orders/${extractOrderId(o.orderId)}` : null
-      }));
-
-      return { 
-        success: true, 
-        data: {
-          ordersCount: stats.orderCount,
-          variantsCount: stats.variantCount,
-          inventoryCount: inventoryStats.variantCount,
-          newlyFulfilledFromShopify: newlyFulfilledForToast,
-          message: `Synced ${stats.orderCount} orders, ${stats.variantCount} task variants, ${inventoryStats.variantCount} inventory items${twoWayMessage}`
-        }
-      };
+      return syncResult;
     } catch (error) {
       console.error('Error syncing from Shopify:', error);
-      
-      // Log failed sync
+
       logSync({
         ordersFetched: 0,
         variantsUpdated: 0,
         status: 'error',
         errorMessage: error.message
       });
-      
+
       return { success: false, error: error.message };
     }
   });

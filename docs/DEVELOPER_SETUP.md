@@ -152,6 +152,8 @@ npm test
 
 Tests run automatically in GitHub Actions on PRs and before builds.
 
+For the established testing patterns used in this codebase (the `*Impl` pure function technique, how we test the sync orchestrator, and the Docker method for real native database coverage), see [TESTING_PATTERNS.md](../docs/TESTING_PATTERNS.md).
+
 ## Development/Debug Mode
 
 When running in development mode, you can skip the setup wizard by creating a `.env` file:

@@ -32,6 +32,25 @@ jobs:
       - name: Run tests
         run: npm test
 
+      - name: Run tests with coverage
+        run: npm run test:coverage -- --coverageReporters=text-summary
+
+      - name: Coverage Summary
+        run: |
+          echo "=== Jest Coverage Summary ==="
+          npm run test:coverage -- --coverageReporters=text-summary --silent || true
+          echo ""
+          echo "Detailed HTML report and lcov.info are available in the 'coverage-report' artifact."
+        if: always()
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 30
+
   build-windows:
     runs-on: windows-latest
     steps:
@@ -82,3 +101,34 @@ jobs:
         with:
           name: linux-build
           path: dist/*.AppImage
+
+  # Runs coverage using a real better-sqlite3 instance inside Docker.
+  # This is required to get meaningful coverage numbers on src/main/database.js
+  # (the native module must be compiled against the exact Node version).
+  coverage-real-db:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and run real-DB coverage
+        run: |
+          # Use the dedicated real-db-coverage service (matches the local command
+          # `docker compose -f docker-compose.test.yml run --rm -e REAL_DB_COVERAGE=1 real-db-coverage`).
+          # This service has the correct full test + coverage command and the post-COPY
+          # native rebuild that actually produces a loadable better-sqlite3 binary.
+          docker compose -f docker-compose.test.yml build real-db-coverage
+          docker compose -f docker-compose.test.yml run --rm \
+            -e REAL_DB_COVERAGE=1 \
+            real-db-coverage
+
+      - name: Upload real-DB coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report-real-db
+          path: coverage/
+          retention-days: 30

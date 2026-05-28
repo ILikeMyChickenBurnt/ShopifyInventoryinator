@@ -1,0 +1,43 @@
+# Dockerfile for running tests with real native modules (especially better-sqlite3)
+# Intended for reliable coverage of src/main/database.js using the actual production code.
+
+FROM node:22-bookworm
+
+# Install build dependencies needed for native modules
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    python3 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Ensure the directory that the postinstall "copy-vue" script writes to exists.
+# The script does: copyFileSync('node_modules/vue/dist/vue.global.js', 'src/renderer/vue.js')
+RUN mkdir -p src/renderer
+
+# Copy package files first (better caching)
+COPY package*.json ./
+
+# Install all dependencies (this runs postinstall, which now has the target dir)
+RUN npm ci
+
+# Copy source (this would overwrite any earlier native builds with host artifacts,
+# especially on Windows where better-sqlite3 ships win32 binaries).
+COPY . .
+
+# Robust from-source rebuild of better-sqlite3 (critical for REAL_DB_COVERAGE=1).
+# Must run AFTER the COPY . . step, otherwise the host's node_modules (Windows .node
+# or corrupted headers) clobbers the Linux binary we compiled → "invalid ELF header".
+# We do a complete wipe + clean source build targeting this container's plain Node 22.
+RUN npm uninstall better-sqlite3 2>/dev/null || true
+RUN rm -rf node_modules/better-sqlite3
+RUN npm install better-sqlite3 --build-from-source --force
+
+# Extra safety: force a clean native rebuild (release) after any cached gyp state.
+RUN cd node_modules/better-sqlite3 && \
+    rm -rf build prebuilds && \
+    npx node-gyp rebuild --release 2>/dev/null || \
+    npm run build -- --release 2>/dev/null || true
+
+# Default: run coverage (can be overridden)
+CMD ["npm", "run", "test:coverage"]

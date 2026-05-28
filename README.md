@@ -64,6 +64,7 @@ If you're the developer distributing this app, see [docs/DEVELOPER_SETUP.md](doc
 - This app uses **OAuth 2.0** authentication (not legacy API keys)
 - Legacy "custom apps" created via Shopify Admin were deprecated January 2025
 - See [CLAUDE.md](CLAUDE.md) for AI assistant context and technical decisions
+- Security policy, vulnerability reporting, and secure development practices: [SECURITY.md](SECURITY.md)
 
 ## Testing
 
@@ -72,7 +73,9 @@ Run the test suite:
 npm test
 ```
 
-Tests use sql.js (pure JavaScript SQLite) to avoid native module issues in Jest.
+See [docs/TESTING_PATTERNS.md](docs/TESTING_PATTERNS.md) for our established patterns (the `*Impl` extraction technique, orchestrated sync tests, and how we achieve real coverage on the native database using Docker).
+
+Tests normally use sql.js (pure JavaScript SQLite) to avoid native module issues in Jest. For high-confidence coverage on `database.js`, use the real better-sqlite3 Docker path described in the testing patterns guide.
 
 ## Building
 

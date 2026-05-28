@@ -1,0 +1,19 @@
+services:
+  coverage:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    environment:
+      - NODE_ENV=test
+      - REAL_DB_COVERAGE=1
+    command: ["npm", "run", "test:coverage", "--", "--coverageReporters=text-summary"]
+
+  real-db-coverage:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    environment:
+      - NODE_ENV=test
+      - REAL_DB_COVERAGE=1
+    # Run the full test suite with coverage so that all code paths that touch the real database.js are exercised
+    command: ["npm", "run", "test:coverage", "--", "--coverageReporters=text-summary"]

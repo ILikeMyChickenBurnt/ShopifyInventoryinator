@@ -7,6 +7,14 @@
 
 const initSqlJs = require('sql.js');
 
+// Import the real pure business logic helpers from the production database module.
+// This eliminates duplication of status calculation rules between prod and test code.
+const {
+  calculateTaskStatus,
+  calculateOrderStatus,
+  computeAllocationStep
+} = require('../../src/main/database');
+
 let db;
 let SQL;
 
@@ -231,9 +239,7 @@ function updateMadeQuantity(variantId, quantityToAdd) {
   const newMade = Math.min(task.made_quantity + quantityToAdd, task.total_quantity);
   const actualAdded = newMade - task.made_quantity;
   
-  const newStatus = newMade >= task.total_quantity ? 'completed' 
-    : newMade > 0 ? 'in_progress' 
-    : 'pending';
+  const newStatus = calculateTaskStatus(newMade, task.total_quantity);
   
   db.run(`
     UPDATE tasks 
@@ -349,9 +355,7 @@ function archiveOrder(orderId) {
         // Delete task if no quantity left
         db.run('DELETE FROM tasks WHERE variant_id = ?', [item.variant_id]);
       } else {
-        const newStatus = newMade >= newTotal ? 'completed' 
-          : newMade > 0 ? 'in_progress' 
-          : 'pending';
+        const newStatus = calculateTaskStatus(newMade, newTotal);
         db.run(`
           UPDATE tasks 
           SET made_quantity = ?, total_quantity = ?, status = ?, updated_at = CURRENT_TIMESTAMP 
@@ -409,17 +413,13 @@ function unarchiveOrder(orderId) {
         imageUrl: item.image_url,
         totalQuantity: item.quantity,
         madeQuantity: item.fulfilled_quantity,
-        status: item.fulfilled_quantity >= item.quantity ? 'completed' 
-          : item.fulfilled_quantity > 0 ? 'in_progress' 
-          : 'pending'
+        status: calculateTaskStatus(item.fulfilled_quantity, item.quantity)
       });
     }
   }
   
   // Determine new status based on fulfillment
-  const newStatus = order.fulfilled_items >= order.total_items ? 'fulfilled'
-    : order.fulfilled_items > 0 ? 'in_progress'
-    : 'pending';
+  const newStatus = calculateOrderStatus(order.fulfilled_items, order.total_items);
   
   db.run(`
     UPDATE orders 
@@ -443,9 +443,7 @@ function resetOrderProgress(orderId) {
     const task = getTaskByVariantId(item.variant_id);
     if (task && item.fulfilled_quantity > 0) {
       const newMade = Math.max(0, task.made_quantity - item.fulfilled_quantity);
-      const newStatus = newMade >= task.total_quantity ? 'completed'
-        : newMade > 0 ? 'in_progress'
-        : 'pending';
+      const newStatus = calculateTaskStatus(newMade, task.total_quantity);
       
       db.run(`
         UPDATE tasks 
@@ -522,10 +520,8 @@ function allocateMadeQuantityToOrders(variantId, quantityToAllocate) {
   for (const item of lineItems) {
     if (remainingToAllocate <= 0) break;
     
-    const canFulfill = item.quantity - item.fulfilled_quantity;
-    if (canFulfill <= 0) continue;
-    
-    const toFulfill = Math.min(canFulfill, remainingToAllocate);
+    const toFulfill = computeAllocationStep(item.quantity, item.fulfilled_quantity, remainingToAllocate);
+    if (toFulfill <= 0) continue;
     const newFulfilled = item.fulfilled_quantity + toFulfill;
     
     // Update line item
@@ -538,9 +534,7 @@ function allocateMadeQuantityToOrders(variantId, quantityToAllocate) {
     // Update order fulfilled_items
     const order = getOrderByOrderId(item.order_id);
     const newOrderFulfilled = order.fulfilled_items + toFulfill;
-    const newOrderStatus = newOrderFulfilled >= order.total_items ? 'fulfilled'
-      : newOrderFulfilled > 0 ? 'in_progress'
-      : 'pending';
+    const newOrderStatus = calculateOrderStatus(newOrderFulfilled, order.total_items);
     
     db.run(`
       UPDATE orders 
@@ -582,9 +576,7 @@ function resetVariantInOrders(variantId) {
       // Update order
       const order = getOrderByOrderId(item.order_id);
       const newFulfilled = Math.max(0, order.fulfilled_items - item.fulfilled_quantity);
-      const newStatus = newFulfilled >= order.total_items ? 'fulfilled'
-        : newFulfilled > 0 ? 'in_progress'
-        : 'pending';
+      const newStatus = calculateOrderStatus(newFulfilled, order.total_items);
       
       db.run(`
         UPDATE orders 
@@ -780,5 +772,7 @@ module.exports = {
   getAllInventory,
   getInventoryByVariantId,
   getInventoryStats,
-  clearAllInventory
+  clearAllInventory,
+  // Sync logging (no-op in tests, sufficient for orchestrator)
+  logSync: () => {}
 };

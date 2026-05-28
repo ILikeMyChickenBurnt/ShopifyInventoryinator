@@ -105,7 +105,7 @@ class ShopifyOAuth {
             }
 
             // Exchange code for token
-            console.log('Exchanging authorization code for access token...');
+            console.log('Exchanging authorization code for access token...'); // code and secret never logged
             const accessToken = await this.exchangeCodeForToken(code);
 
             // Send success response to browser

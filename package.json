@@ -11,7 +11,11 @@
     "build:win": "electron-builder --win",
     "build:linux": "electron-builder --linux",
     "release": "electron-builder --publish always",
-    "test": "jest"
+    "test": "jest",
+    "test:coverage": "jest --coverage",
+    "test:ci": "jest --coverage --ci --watchAll=false",
+    "test:coverage:real": "docker compose -f docker-compose.test.yml run --rm coverage",
+    "test:real-db-coverage": "docker compose -f docker-compose.test.yml run --rm real-db-coverage"
   },
   "keywords": [
     "shopify",
