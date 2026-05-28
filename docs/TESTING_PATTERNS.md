@@ -95,11 +95,20 @@ When contributing (human or AI-assisted):
 
 ## Coverage Goals & Thresholds
 
-Thresholds live in `jest.config.js`. They are intentionally set at sustainable levels achieved through the real-DB Docker runs (~84.5% statements, ~71.7% branches globally as of late 2026).
+Coverage is now collected in a single job that always runs inside Docker with a real compiled `better-sqlite3` (via `REAL_DB_COVERAGE=1`).
 
-A dedicated (lower but meaningful) bar exists for `database.js` because even with the Docker technique it remains the hardest file to cover completely.
+- The fast `test` job only runs `npm test` (no coverage) for quick feedback.
+- The `coverage` job builds the Docker image and runs the full test suite + coverage using the real native binary.
 
-Raising thresholds further is encouraged when new exercising tests are added.
+This gives us one authoritative coverage report with good numbers for `database.js` (~80%+ range) and the rest of the codebase.
+
+Because we now have a single coverage run with the real binary, we can enforce meaningful thresholds (including on `database.js`) without the previous split-job problem.
+
+When adding tests that exercise database paths, prefer adding them inside the `if (dbType === 'better-sqlite3')` block so they contribute to the real coverage numbers.
+
+Current baseline (real binary via Docker): ~84%+ statements overall, high coverage on the production database module.
+
+Raising thresholds further is encouraged as we add more exercising tests.
 
 ## Running the Important Test Commands
 

@@ -145,6 +145,8 @@ We adopted a deliberate "pure function extraction" pattern to make previously un
 
 Current baseline (measured via the real-DB Docker job): ~84.5% statements / ~71.7% branches globally.
 
+**Important coverage note**: Coverage is collected in a single Docker-based job using a real compiled better-sqlite3 (`REAL_DB_COVERAGE=1`). The fast `test` job only runs non-coverage tests. This gives us one authoritative report with good numbers for database.js. See `docs/TESTING_PATTERNS.md`.
+
 ### 2. Security Culture & Standards
 After the 2025–2026 npm supply-chain attacks, we treat dependency hygiene as ongoing work, not a one-time event:
 

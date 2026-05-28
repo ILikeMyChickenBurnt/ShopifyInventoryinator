@@ -23,16 +23,16 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">98.13% </span>
+                <span class="strong">98.18% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>158/161</span>
+                <span class='fraction'>162/165</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">80% </span>
+                <span class="strong">85.71% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>20/25</span>
+                <span class='fraction'>24/28</span>
             </div>
         
             
@@ -44,9 +44,9 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">98.13% </span>
+                <span class="strong">98.18% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>158/161</span>
+                <span class='fraction'>162/165</span>
             </div>
         
             
@@ -224,7 +224,11 @@
 <a name='L159'></a><a href='#L159'>159</a>
 <a name='L160'></a><a href='#L160'>160</a>
 <a name='L161'></a><a href='#L161'>161</a>
-<a name='L162'></a><a href='#L162'>162</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
+<a name='L162'></a><a href='#L162'>162</a>
+<a name='L163'></a><a href='#L163'>163</a>
+<a name='L164'></a><a href='#L164'>164</a>
+<a name='L165'></a><a href='#L165'>165</a>
+<a name='L166'></a><a href='#L166'>166</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
@@ -242,11 +246,13 @@
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">3x</span>
-<span class="cline-any cline-yes">3x</span>
-<span class="cline-any cline-yes">3x</span>
-<span class="cline-any cline-yes">3x</span>
-<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
@@ -358,15 +364,16 @@
 <span class="cline-any cline-yes">10x</span>
 <span class="cline-any cline-yes">10x</span>
 <span class="cline-any cline-yes">10x</span>
-<span class="cline-any cline-yes">10x</span>
+<span class="cline-any cline-yes">12x</span>
+<span class="cline-any cline-yes">12x</span>
 <span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-yes">10x</span>
-<span class="cline-any cline-yes">10x</span>
-<span class="cline-any cline-yes">10x</span>
+<span class="cline-any cline-yes">12x</span>
+<span class="cline-any cline-yes">12x</span>
+<span class="cline-any cline-yes">12x</span>
 <span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-yes">12x</span>
 <span class="cline-any cline-yes">12x</span>
@@ -381,6 +388,7 @@
 <span class="cline-any cline-yes">12x</span>
 <span class="cline-any cline-yes">12x</span>
 <span class="cline-any cline-yes">12x</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
@@ -404,7 +412,7 @@ const { getStoreUrl } = require('./config');
  * Extract numeric order ID from Shopify GID (small shared helper)
  */
 function extractOrderId(gid) {
-  if (!gid) <span class="branch-0 cbranch-no" title="branch not covered" >return '';</span>
+  if (!gid) return '';
   const match = gid.match(/Order\/(\d+)/);
   return match ? match[1] : gid;
 }
@@ -416,8 +424,10 @@ function extractOrderId(gid) {
  * @param {object} client - An instance with fetch methods (real or mock)
  * @param {object} [db] - Optional database operations (defaults to real module).
  *                        Allows tests to inject the sql.js test helper.
+ * @param {object} [configOverrides] - Optional config function overrides for testability.
+ *                        Currently supports: { getStoreUrl: () =&gt; string }
  */
-async function performSync(client, db = realDb) {
+async function performSync(client, db = realDb, configOverrides = {}) {
   if (!client) <span class="branch-0 cbranch-no" title="branch not covered" >{</span>
 <span class="cstat-no" title="statement not covered" >    throw new Error('Shopify client is required for sync');</span>
 <span class="cstat-no" title="statement not covered" >  }</span>
@@ -518,7 +528,8 @@ async function performSync(client, db = realDb) {
   });
 &nbsp;
   // Shape response for the UI (including toast data)
-  const storeUrl = getStoreUrl();
+  const { getStoreUrl: getStoreUrlOverride } = configOverrides;
+  const storeUrl = getStoreUrlOverride ? getStoreUrlOverride() : getStoreUrl();
   const newlyFulfilledForToast = newlyFulfilledFromShopify.map(o =&gt; ({
     order_id: o.orderId,
     order_name: o.orderName,
@@ -544,7 +555,8 @@ async function performSync(client, db = realDb) {
 }
 &nbsp;
 module.exports = {
-  performSync
+  performSync,
+  extractOrderId   // Exported for testability and reuse (pure helper)
 };
 &nbsp;</pre></td></tr></table></pre>
 
@@ -553,7 +565,7 @@ module.exports = {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-05-28T19:08:25.476Z
+                at 2026-05-28T19:21:50.155Z
             </div>
         <script src="prettify.js"></script>
         <script>

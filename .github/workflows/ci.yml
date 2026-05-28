@@ -31,25 +31,8 @@ jobs:
 
       - name: Run tests
         run: npm test
-
-      - name: Run tests with coverage
-        run: npm run test:coverage -- --coverageReporters=text-summary
-
-      - name: Coverage Summary
-        run: |
-          echo "=== Jest Coverage Summary ==="
-          npm run test:coverage -- --coverageReporters=text-summary --silent || true
-          echo ""
-          echo "Detailed HTML report and lcov.info are available in the 'coverage-report' artifact."
-        if: always()
-
-      - name: Upload coverage report
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: coverage-report
-          path: coverage/
-          retention-days: 30
+        # Fast feedback job. Coverage is collected in the dedicated Docker job below
+        # so we get accurate numbers for native modules (especially database.js).
 
   build-windows:
     runs-on: windows-latest
@@ -102,10 +85,10 @@ jobs:
           name: linux-build
           path: dist/*.AppImage
 
-  # Runs coverage using a real better-sqlite3 instance inside Docker.
-  # This is required to get meaningful coverage numbers on src/main/database.js
-  # (the native module must be compiled against the exact Node version).
-  coverage-real-db:
+  # Coverage job — always runs inside Docker with a real compiled better-sqlite3.
+  # This is the single source of truth for coverage numbers (including database.js).
+  # The `test` job above only runs fast non-coverage tests (`npm test`) for quick feedback.
+  coverage:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -114,21 +97,27 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and run real-DB coverage
+      - name: Build and run coverage (real better-sqlite3)
         run: |
-          # Use the dedicated real-db-coverage service (matches the local command
-          # `docker compose -f docker-compose.test.yml run --rm -e REAL_DB_COVERAGE=1 real-db-coverage`).
-          # This service has the correct full test + coverage command and the post-COPY
-          # native rebuild that actually produces a loadable better-sqlite3 binary.
+          # Use the dedicated real-db-coverage service. This builds a container with
+          # a clean from-source better-sqlite3 binary (required for real coverage on
+          # the native database module) and runs the full test suite + coverage.
           docker compose -f docker-compose.test.yml build real-db-coverage
           docker compose -f docker-compose.test.yml run --rm \
             -e REAL_DB_COVERAGE=1 \
             real-db-coverage
 
-      - name: Upload real-DB coverage report
+      - name: Coverage Summary
+        run: |
+          echo "=== Real-DB Coverage Summary (authoritative) ==="
+          echo "This run used a real compiled better-sqlite3 inside Docker."
+          echo "Coverage report is available as 'coverage-report' artifact."
+        if: always()
+
+      - name: Upload coverage report
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: coverage-report-real-db
+          name: coverage-report
           path: coverage/
           retention-days: 30

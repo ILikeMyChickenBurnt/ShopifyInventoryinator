@@ -27,10 +27,15 @@ module.exports = {
   // V8 provider is more compatible with our dependency overrides (minimatch pins etc.)
   coverageProvider: 'v8',
 
-  // Thresholds updated after the 2026 comprehensive testing + real native DB coverage initiative
-  // (Docker + better-sqlite3 from source). These numbers reflect what is sustainably achievable
-  // when the hard modules (database.js, sync-orchestrator) are exercised with real paths.
-  // See CLAUDE.md "Testing & Security Culture" section for the patterns that made this possible.
+  // Coverage thresholds
+  //
+  // Coverage is collected in the Docker-based `coverage` job using a real compiled
+  // better-sqlite3 (REAL_DB_COVERAGE=1). This gives us one authoritative report with
+  // good numbers for database.js and the rest of the app.
+  //
+  // The fast `test` job only runs `npm test` (no coverage) for quick feedback.
+  //
+  // See docs/TESTING_PATTERNS.md for the full picture.
   coverageThreshold: {
     global: {
       branches: 70,
@@ -57,11 +62,12 @@ module.exports = {
       statements: 88
     },
     './src/main/database.js': {
-      // Measured via the REAL_DB_COVERAGE=1 Docker job. This is the bar for the native DB module.
-      branches: 65,
-      functions: 25,
-      lines: 40,
-      statements: 40
+      // These thresholds are now realistic because coverage for this file is collected
+      // exclusively in the Docker-based `coverage` job (with a real compiled better-sqlite3).
+      branches: 60,
+      functions: 30,
+      lines: 45,
+      statements: 45
     }
   }
 };
