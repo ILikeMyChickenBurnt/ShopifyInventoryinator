@@ -67,11 +67,19 @@ See `Dockerfile.test` for the critical detail: the from-source rebuild of `bette
 
 ### Sync Orchestration (`src/main/sync-orchestrator.js`)
 
-`performSync(client, db?)` accepts an optional injected database. This is the key enabler for realistic feature tests.
+`performSync(client, db?, configOverrides?)` accepts an optional injected database **and** config overrides. Small pure helpers like `extractOrderId` are also exported for direct testing.
+
+This is the key enabler for realistic feature tests.
 
 **Pattern**:
 - Use `tests/__mocks__/shopify-api.js` → `MockShopifyClient` for controlled Shopify responses (including two-way fulfillment scenarios).
 - Inject a real test DB instance (sql.js or the Docker real binary).
+- Inject config functions when needed via the third parameter, e.g.:
+  ```js
+  await performSync(client, dbForSync, {
+    getStoreUrl: () => 'test-store.myshopify.com'
+  });
+  ```
 - Write end-to-end style tests in `tests/features/sync-flow.test.js` that exercise the full allocation + two-way reconciliation + logging behavior.
 
 This approach gives high confidence without requiring a real Shopify store or network.
@@ -81,7 +89,7 @@ This approach gives high confidence without requiring a real Shopify store or ne
 When contributing (human or AI-assisted):
 
 - New business logic with branches or complex mapping **must** be extracted as `*Impl` functions with dedicated unit tests.
-- New flows that cross DB + external data (especially anything involving orders, allocation, or sync) should have at least one orchestrated feature test using the Mock + injectable DB pattern.
+- New flows that cross DB + external data (especially anything involving orders, allocation, or sync) should have at least one orchestrated feature test using the Mock + injectable DB (and config) pattern.
 - If you add or modify code that touches the native database layer, consider whether it needs additional cases inside the `REAL_DB_COVERAGE` block.
 - PRs should not cause the `coverage-real-db` CI job to fail its thresholds.
 

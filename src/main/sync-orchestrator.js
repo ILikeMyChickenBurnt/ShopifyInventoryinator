@@ -29,8 +29,10 @@ function extractOrderId(gid) {
  * @param {object} client - An instance with fetch methods (real or mock)
  * @param {object} [db] - Optional database operations (defaults to real module).
  *                        Allows tests to inject the sql.js test helper.
+ * @param {object} [configOverrides] - Optional config function overrides for testability.
+ *                        Currently supports: { getStoreUrl: () => string }
  */
-async function performSync(client, db = realDb) {
+async function performSync(client, db = realDb, configOverrides = {}) {
   if (!client) {
     throw new Error('Shopify client is required for sync');
   }
@@ -131,7 +133,8 @@ async function performSync(client, db = realDb) {
   });
 
   // Shape response for the UI (including toast data)
-  const storeUrl = getStoreUrl();
+  const { getStoreUrl: getStoreUrlOverride } = configOverrides;
+  const storeUrl = getStoreUrlOverride ? getStoreUrlOverride() : getStoreUrl();
   const newlyFulfilledForToast = newlyFulfilledFromShopify.map(o => ({
     order_id: o.orderId,
     order_name: o.orderName,
@@ -157,5 +160,6 @@ async function performSync(client, db = realDb) {
 }
 
 module.exports = {
-  performSync
+  performSync,
+  extractOrderId   // Exported for testability and reuse (pure helper)
 };

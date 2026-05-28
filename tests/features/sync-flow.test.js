@@ -22,6 +22,24 @@ const {
 } = testDb;
 
 describe('Sync Orchestration with Mocked Client', () => {
+
+  // Small pure helper tests (extractOrderId is exported for testability)
+  describe('extractOrderId helper', () => {
+    const { extractOrderId } = require('../../src/main/sync-orchestrator');
+
+    test('extracts numeric ID from Shopify GID', () => {
+      expect(extractOrderId('gid://shopify/Order/123456')).toBe('123456');
+    });
+
+    test('returns original string if no Order/ segment', () => {
+      expect(extractOrderId('some-random-id')).toBe('some-random-id');
+    });
+
+    test('returns empty string for null/undefined', () => {
+      expect(extractOrderId(null)).toBe('');
+      expect(extractOrderId(undefined)).toBe('');
+    });
+  });
   beforeAll(async () => {
     await initTestDatabase();
   });
@@ -391,7 +409,9 @@ describe('Sync Orchestration with Mocked Client', () => {
       })
     });
 
-    const result = await performSync(client, dbForSync);
+    const result = await performSync(client, dbForSync, {
+      getStoreUrl: () => 'test-store.myshopify.com'
+    });
 
     expect(result.data.newlyFulfilledFromShopify).toHaveLength(1);
     const toastItem = result.data.newlyFulfilledFromShopify[0];
