@@ -333,123 +333,14 @@ class ShopifyClient {
    * Aggregate line items by variant ID and sum fulfillable quantities
    */
   aggregateByVariant(orders) {
-    const variantMap = new Map();
-
-    console.log('Aggregating line items by variant...');
-
-    for (const order of orders) {
-      if (!order.lineItems || !order.lineItems.edges) {
-        continue;
-      }
-
-      for (const lineItemEdge of order.lineItems.edges) {
-        const lineItem = lineItemEdge.node;
-        
-        // Skip if no variant or no fulfillable quantity
-        if (!lineItem.variant || lineItem.fulfillableQuantity <= 0) {
-          continue;
-        }
-
-        const variantId = lineItem.variant.id;
-        
-        // Get the best available image (variant image or product featured image)
-        const variantImage = lineItem.variant.image?.url || 
-                            lineItem.variant.product?.featuredImage?.url || 
-                            null;
-        
-        if (variantMap.has(variantId)) {
-          // Add to existing variant
-          const existing = variantMap.get(variantId);
-          existing.totalQuantity += lineItem.fulfillableQuantity;
-        } else {
-          // Build a display-friendly variant title
-          const variantTitle = lineItem.variant.title;
-          const displayVariantTitle = (variantTitle && variantTitle !== 'Default Title') 
-            ? variantTitle 
-            : '';
-          
-          // Create new entry
-          variantMap.set(variantId, {
-            variantId: variantId,
-            variantTitle: displayVariantTitle,
-            productTitle: lineItem.variant.product?.title || lineItem.title || 'Unknown product',
-            sku: lineItem.variant.sku || '',
-            imageUrl: variantImage,
-            totalQuantity: lineItem.fulfillableQuantity
-          });
-        }
-      }
-    }
-
-    const aggregated = Array.from(variantMap.values());
-    console.log(`Aggregated ${aggregated.length} unique variants`);
-    
-    return aggregated;
+    return aggregateByVariantImpl(orders);
   }
 
   /**
    * Extract order data for storage (including line items)
    */
   extractOrdersForStorage(orders) {
-    const ordersData = [];
-
-    console.log('Extracting order data for storage...');
-
-    for (const order of orders) {
-      if (!order.lineItems || !order.lineItems.edges) {
-        continue;
-      }
-
-      const lineItems = [];
-      let totalItems = 0;
-
-      for (const lineItemEdge of order.lineItems.edges) {
-        const lineItem = lineItemEdge.node;
-        
-        // Skip if no variant or no fulfillable quantity
-        if (!lineItem.variant || lineItem.fulfillableQuantity <= 0) {
-          continue;
-        }
-
-        // Get the best available image
-        const variantImage = lineItem.variant.image?.url || 
-                            lineItem.variant.product?.featuredImage?.url || 
-                            null;
-
-        // Build a display-friendly variant title
-        const variantTitle = lineItem.variant.title;
-        const displayVariantTitle = (variantTitle && variantTitle !== 'Default Title') 
-          ? variantTitle 
-          : '';
-
-        lineItems.push({
-          orderId: order.id,
-          lineItemId: lineItem.id,
-          variantId: lineItem.variant.id,
-          variantTitle: displayVariantTitle,
-          productTitle: lineItem.variant.product?.title || lineItem.title || 'Unknown product',
-          sku: lineItem.variant.sku || '',
-          imageUrl: variantImage,
-          quantity: lineItem.fulfillableQuantity
-        });
-
-        totalItems += lineItem.fulfillableQuantity;
-      }
-
-      // Only include orders that have line items with fulfillable quantities
-      if (lineItems.length > 0) {
-        ordersData.push({
-          orderId: order.id,
-          orderName: order.name,
-          orderDate: order.createdAt,
-          totalItems: totalItems,
-          lineItems: lineItems
-        });
-      }
-    }
-
-    console.log(`Extracted ${ordersData.length} orders for storage`);
-    return ordersData;
+    return extractOrdersForStorageImpl(orders);
   }
 
   /**
@@ -527,43 +418,7 @@ class ShopifyClient {
    * Extract inventory data from products for storage
    */
   extractInventoryForStorage(products) {
-    const inventoryData = [];
-
-    console.log('Extracting inventory data for storage...');
-
-    for (const product of products) {
-      if (!product.variants || !product.variants.edges) {
-        continue;
-      }
-
-      const productImage = product.featuredImage?.url || null;
-
-      for (const variantEdge of product.variants.edges) {
-        const variant = variantEdge.node;
-        
-        // Get the best available image (variant image or product featured image)
-        const variantImage = variant.image?.url || productImage;
-        
-        // Build a display-friendly variant title
-        const variantTitle = variant.title;
-        const displayVariantTitle = (variantTitle && variantTitle !== 'Default Title') 
-          ? variantTitle 
-          : '';
-
-        inventoryData.push({
-          variantId: variant.id,
-          productId: product.id,
-          productTitle: product.title,
-          variantTitle: displayVariantTitle,
-          sku: variant.sku || '',
-          imageUrl: variantImage,
-          inventoryQuantity: variant.inventoryQuantity || 0
-        });
-      }
-    }
-
-    console.log(`Extracted ${inventoryData.length} variants with inventory data`);
-    return inventoryData;
+    return extractInventoryForStorageImpl(products);
   }
 
   /**
@@ -695,41 +550,7 @@ class ShopifyClient {
    * the system (tasks, allocation, etc.) continues to work unchanged.
    */
   aggregateByVariantFromFulfillmentOrders(fulfillmentOrders) {
-    const variantMap = new Map();
-    console.log('[Modern] Aggregating FulfillmentOrderLineItems by variant using remainingQuantity...');
-
-    for (const fo of fulfillmentOrders) {
-      if (!fo.lineItems || !fo.lineItems.edges) continue;
-
-      for (const liEdge of fo.lineItems.edges) {
-        const li = liEdge.node;
-        if (!li.variant || li.remainingQuantity <= 0) continue;
-
-        const variantId = li.variant.id;
-        const variantImage = li.variant.image?.url ||
-                            li.variant.product?.featuredImage?.url || null;
-
-        const variantTitle = li.variant.title;
-        const displayVariantTitle = (variantTitle && variantTitle !== 'Default Title') ? variantTitle : '';
-
-        if (variantMap.has(variantId)) {
-          variantMap.get(variantId).totalQuantity += li.remainingQuantity;
-        } else {
-          variantMap.set(variantId, {
-            variantId: variantId,
-            variantTitle: displayVariantTitle,
-            productTitle: li.variant.product?.title || li.productTitle || 'Unknown product',
-            sku: li.variant.sku || li.sku || '',
-            imageUrl: variantImage,
-            totalQuantity: li.remainingQuantity
-          });
-        }
-      }
-    }
-
-    const aggregated = Array.from(variantMap.values());
-    console.log(`[Modern] Aggregated ${aggregated.length} unique variants from FulfillmentOrders`);
-    return aggregated;
+    return aggregateByVariantFromFulfillmentOrdersImpl(fulfillmentOrders);
   }
 
   /**
@@ -741,63 +562,7 @@ class ShopifyClient {
    * For simplicity we use the FulfillmentOrder's orderName + order.id as the grouping key.
    */
   extractOrdersForStorageFromFulfillmentOrders(fulfillmentOrders) {
-    const ordersData = [];
-    const orderMap = new Map(); // key by order id to group line items
-
-    console.log('[Modern] Extracting order/line item data from FulfillmentOrders...');
-
-    for (const fo of fulfillmentOrders) {
-      if (!fo.lineItems || !fo.lineItems.edges) continue;
-      if (!fo.order) continue;
-
-      const orderKey = fo.order.id;
-      if (!orderMap.has(orderKey)) {
-        orderMap.set(orderKey, {
-          orderId: fo.order.id,
-          orderName: fo.orderName || fo.order.name,
-          orderDate: fo.order.createdAt,
-          totalItems: 0,
-          lineItems: []
-        });
-      }
-
-      const orderEntry = orderMap.get(orderKey);
-
-      for (const liEdge of fo.lineItems.edges) {
-        const li = liEdge.node;
-        if (!li.variant || li.remainingQuantity <= 0) continue;
-
-        const variantImage = li.variant.image?.url ||
-                            li.variant.product?.featuredImage?.url || null;
-
-        const variantTitle = li.variant.title;
-        const displayVariantTitle = (variantTitle && variantTitle !== 'Default Title') ? variantTitle : '';
-
-        const lineItemForStorage = {
-          orderId: fo.order.id,
-          lineItemId: li.lineItem?.id || li.id, // fall back to FO line item id if original not present
-          variantId: li.variant.id,
-          variantTitle: displayVariantTitle,
-          productTitle: li.variant.product?.title || li.productTitle || 'Unknown product',
-          sku: li.variant.sku || li.sku || '',
-          imageUrl: variantImage,
-          quantity: li.remainingQuantity   // Use remainingQuantity as the "actionable" quantity
-        };
-
-        orderEntry.lineItems.push(lineItemForStorage);
-        orderEntry.totalItems += li.remainingQuantity;
-      }
-    }
-
-    // Convert map to array, only include orders that have actionable line items
-    for (const entry of orderMap.values()) {
-      if (entry.lineItems.length > 0) {
-        ordersData.push(entry);
-      }
-    }
-
-    console.log(`[Modern] Extracted ${ordersData.length} orders with line items from FulfillmentOrders`);
-    return ordersData;
+    return extractOrdersForStorageFromFulfillmentOrdersImpl(fulfillmentOrders);
   }
 
   /**
@@ -849,10 +614,251 @@ class ShopifyClient {
 }
 
 /**
+ * Standalone pure function for aggregating FulfillmentOrder line items by variant.
+ * Exported for easy unit testing.
+ */
+function aggregateByVariantFromFulfillmentOrdersImpl(fulfillmentOrders) {
+  if (!Array.isArray(fulfillmentOrders)) return [];
+
+  const variantMap = new Map();
+
+  for (const fo of fulfillmentOrders) {
+    if (!fo.lineItems || !fo.lineItems.edges) continue;
+
+    for (const liEdge of fo.lineItems.edges) {
+      const li = liEdge.node;
+      if (!li.variant || li.remainingQuantity <= 0) continue;
+
+      const variantId = li.variant.id;
+      const variantImage = li.variant.image?.url ||
+                          li.variant.product?.featuredImage?.url || null;
+
+      const variantTitle = li.variant.title;
+      const displayVariantTitle = (variantTitle && variantTitle !== 'Default Title') ? variantTitle : '';
+
+      if (variantMap.has(variantId)) {
+        variantMap.get(variantId).totalQuantity += li.remainingQuantity;
+      } else {
+        variantMap.set(variantId, {
+          variantId: variantId,
+          variantTitle: displayVariantTitle,
+          productTitle: li.variant.product?.title || li.productTitle || 'Unknown product',
+          sku: li.variant.sku || li.sku || '',
+          imageUrl: variantImage,
+          totalQuantity: li.remainingQuantity
+        });
+      }
+    }
+  }
+
+  return Array.from(variantMap.values());
+}
+
+function extractOrdersForStorageFromFulfillmentOrdersImpl(fulfillmentOrders) {
+  if (!Array.isArray(fulfillmentOrders)) return [];
+
+  const ordersData = [];
+  const orderMap = new Map(); // key by order id to group line items
+
+  for (const fo of fulfillmentOrders) {
+    if (!fo.lineItems || !fo.lineItems.edges) continue;
+    if (!fo.order) continue;
+
+    const orderKey = fo.order.id;
+    if (!orderMap.has(orderKey)) {
+      orderMap.set(orderKey, {
+        orderId: fo.order.id,
+        orderName: fo.orderName || fo.order.name,
+        orderDate: fo.order.createdAt,
+        totalItems: 0,
+        lineItems: []
+      });
+    }
+
+    const orderEntry = orderMap.get(orderKey);
+
+    for (const liEdge of fo.lineItems.edges) {
+      const li = liEdge.node;
+      if (!li.variant || li.remainingQuantity <= 0) continue;
+
+      const variantImage = li.variant.image?.url ||
+                          li.variant.product?.featuredImage?.url || null;
+
+      const variantTitle = li.variant.title;
+      const displayVariantTitle = (variantTitle && variantTitle !== 'Default Title') ? variantTitle : '';
+
+      const lineItemForStorage = {
+        orderId: fo.order.id,
+        lineItemId: li.lineItem?.id || li.id,
+        variantId: li.variant.id,
+        variantTitle: displayVariantTitle,
+        productTitle: li.variant.product?.title || li.productTitle || 'Unknown product',
+        sku: li.variant.sku || li.sku || '',
+        imageUrl: variantImage,
+        quantity: li.remainingQuantity
+      };
+
+      orderEntry.lineItems.push(lineItemForStorage);
+      orderEntry.totalItems += li.remainingQuantity;
+    }
+  }
+
+  for (const entry of orderMap.values()) {
+    if (entry.lineItems.length > 0) {
+      ordersData.push(entry);
+    }
+  }
+
+  return ordersData;
+}
+
+function extractInventoryForStorageImpl(products) {
+  if (!Array.isArray(products)) return [];
+
+  const inventoryData = [];
+
+  for (const product of products) {
+    if (!product.variants || !product.variants.edges) {
+      continue;
+    }
+
+    const productImage = product.featuredImage?.url || null;
+
+    for (const variantEdge of product.variants.edges) {
+      const variant = variantEdge.node;
+      
+      const variantImage = variant.image?.url || productImage;
+      
+      const variantTitle = variant.title;
+      const displayVariantTitle = (variantTitle && variantTitle !== 'Default Title') 
+        ? variantTitle 
+        : '';
+
+      inventoryData.push({
+        variantId: variant.id,
+        productId: product.id,
+        productTitle: product.title,
+        variantTitle: displayVariantTitle,
+        sku: variant.sku || '',
+        imageUrl: variantImage,
+        inventoryQuantity: variant.inventoryQuantity || 0
+      });
+    }
+  }
+
+  return inventoryData;
+}
+
+function aggregateByVariantImpl(orders) {
+  if (!Array.isArray(orders)) return [];
+
+  const variantMap = new Map();
+
+  for (const order of orders) {
+    if (!order.lineItems || !order.lineItems.edges) {
+      continue;
+    }
+
+    for (const lineItemEdge of order.lineItems.edges) {
+      const lineItem = lineItemEdge.node;
+      
+      if (!lineItem.variant || lineItem.fulfillableQuantity <= 0) {
+        continue;
+      }
+
+      const variantId = lineItem.variant.id;
+      const variantImage = lineItem.variant.image?.url || 
+                          lineItem.variant.product?.featuredImage?.url || 
+                          null;
+      
+      if (variantMap.has(variantId)) {
+        const existing = variantMap.get(variantId);
+        existing.totalQuantity += lineItem.fulfillableQuantity;
+      } else {
+        const variantTitle = lineItem.variant.title;
+        const displayVariantTitle = (variantTitle && variantTitle !== 'Default Title') 
+          ? variantTitle 
+          : '';
+        
+        variantMap.set(variantId, {
+          variantId: variantId,
+          variantTitle: displayVariantTitle,
+          productTitle: lineItem.variant.product?.title || lineItem.title || 'Unknown product',
+          sku: lineItem.variant.sku || '',
+          imageUrl: variantImage,
+          totalQuantity: lineItem.fulfillableQuantity
+        });
+      }
+    }
+  }
+
+  return Array.from(variantMap.values());
+}
+
+function extractOrdersForStorageImpl(orders) {
+  if (!Array.isArray(orders)) return [];
+
+  const ordersData = [];
+
+  for (const order of orders) {
+    if (!order.lineItems || !order.lineItems.edges) {
+      continue;
+    }
+
+    const lineItems = [];
+    let totalItems = 0;
+
+    for (const lineItemEdge of order.lineItems.edges) {
+      const lineItem = lineItemEdge.node;
+      
+      if (!lineItem.variant || lineItem.fulfillableQuantity <= 0) {
+        continue;
+      }
+
+      const variantImage = lineItem.variant.image?.url || 
+                          lineItem.variant.product?.featuredImage?.url || 
+                          null;
+
+      const variantTitle = lineItem.variant.title;
+      const displayVariantTitle = (variantTitle && variantTitle !== 'Default Title') 
+        ? variantTitle 
+        : '';
+
+      lineItems.push({
+        orderId: order.id,
+        lineItemId: lineItem.id,
+        variantId: lineItem.variant.id,
+        variantTitle: displayVariantTitle,
+        productTitle: lineItem.variant.product?.title || lineItem.title || 'Unknown product',
+        sku: lineItem.variant.sku || '',
+        imageUrl: variantImage,
+        quantity: lineItem.fulfillableQuantity
+      });
+
+      totalItems += lineItem.fulfillableQuantity;
+    }
+
+    if (lineItems.length > 0) {
+      ordersData.push({
+        orderId: order.id,
+        orderName: order.name,
+        orderDate: order.createdAt,
+        totalItems: totalItems,
+        lineItems: lineItems
+      });
+    }
+  }
+
+  return ordersData;
+}
+
+/**
  * Standalone pure function for extracting fulfilled orders.
  * Exported for easy unit testing.
  */
 function extractFulfilledOrdersForStorageFromFulfillmentOrdersImpl(fulfillmentOrders) {
+  if (!Array.isArray(fulfillmentOrders)) return [];
+
   const ordersData = [];
   const orderMap = new Map();
 
@@ -914,6 +920,11 @@ function extractFulfilledOrdersForStorageFromFulfillmentOrdersImpl(fulfillmentOr
 
 module.exports = { 
   ShopifyClient,
-  // Exported for testing the two-way sync extraction logic
-  extractFulfilledOrdersForStorageFromFulfillmentOrders: extractFulfilledOrdersForStorageFromFulfillmentOrdersImpl
+  // Exported for testing the transformation logic (core of data ingestion + two-way sync)
+  aggregateByVariant: aggregateByVariantImpl,
+  extractOrdersForStorage: extractOrdersForStorageImpl,
+  aggregateByVariantFromFulfillmentOrders: aggregateByVariantFromFulfillmentOrdersImpl,
+  extractOrdersForStorageFromFulfillmentOrders: extractOrdersForStorageFromFulfillmentOrdersImpl,
+  extractFulfilledOrdersForStorageFromFulfillmentOrders: extractFulfilledOrdersForStorageFromFulfillmentOrdersImpl,
+  extractInventoryForStorage: extractInventoryForStorageImpl
 };

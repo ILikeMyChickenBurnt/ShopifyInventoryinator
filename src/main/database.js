@@ -45,9 +45,14 @@ function getDatabasePath(storeUrl) {
 }
 
 /**
- * Initialize database connection and create tables
+ * Initialize database connection and create tables.
+ * 
+ * @param {string|null} storeUrl - Store identifier for file naming
+ * @param {object|null} existingDb - Optional existing database instance (better-sqlite3 or compatible).
+ *                                   When provided, skips file-based initialization and table creation.
+ *                                   Useful for testing with sql.js or in-memory databases.
  */
-function initDatabase(storeUrl = null) {
+function initDatabase(storeUrl = null, existingDb = null) {
   // If switching stores, close existing connection
   if (db && storeUrl && storeUrl !== currentStoreUrl) {
     console.log(`Switching database from ${currentStoreUrl} to ${storeUrl}`);
@@ -62,6 +67,13 @@ function initDatabase(storeUrl = null) {
   }
   
   currentStoreUrl = storeUrl;
+
+  if (existingDb) {
+    db = existingDb;
+    console.log('Database initialized with provided instance (testing mode)');
+    return;
+  }
+
   const dbPath = getDatabasePath(storeUrl);
   console.log('Database path:', dbPath);
   
@@ -600,8 +612,7 @@ function allocateMadeQuantityToOrders(variantId, quantity) {
   for (const item of lineItems) {
     if (remainingToAllocate <= 0) break;
     
-    const canFulfill = item.quantity - item.fulfilled_quantity;
-    const willFulfill = Math.min(canFulfill, remainingToAllocate);
+    const willFulfill = computeAllocationStepImpl(item.quantity, item.fulfilled_quantity, remainingToAllocate);
     
     if (willFulfill > 0) {
       // Update line item fulfilled quantity
@@ -1142,7 +1153,73 @@ function clearAllInventory() {
   console.log('All inventory data cleared');
 }
 
+// ============================================================
+// PURE BUSINESS LOGIC HELPERS (extracted for testability)
+// These contain no DB access and can be unit tested in isolation.
+// ============================================================
+
+/**
+ * Pure function: Determine task status from made vs total quantities.
+ * Single source of truth for the state machine:
+ *   pending → in_progress → completed
+ */
+function calculateTaskStatusImpl(madeQuantity, totalQuantity) {
+  const made = Number(madeQuantity) || 0;
+  const total = Number(totalQuantity) || 0;
+
+  if (total <= 0) return 'pending';
+  if (made <= 0) return 'pending';
+  if (made >= total) return 'completed';
+  return 'in_progress';
+}
+
+/**
+ * Pure function: Determine order status from fulfilled vs total items.
+ * Matches the UI and DB state machine for orders.
+ */
+function calculateOrderStatusImpl(fulfilledItems, totalItems) {
+  const fulfilled = Number(fulfilledItems) || 0;
+  const total = Number(totalItems) || 0;
+
+  if (total <= 0) return 'pending';
+  if (fulfilled <= 0) return 'pending';
+  if (fulfilled >= total) return 'fulfilled';
+  return 'in_progress';
+}
+
+// Public wrappers (for symmetry with shopify-api pattern and future internal use)
+function calculateTaskStatus(madeQuantity, totalQuantity) {
+  return calculateTaskStatusImpl(madeQuantity, totalQuantity);
+}
+
+function calculateOrderStatus(fulfilledItems, totalItems) {
+  return calculateOrderStatusImpl(fulfilledItems, totalItems);
+}
+
+/**
+ * Pure helper: Compute how much of a single order line item we can/should allocate
+ * given current fulfilled state and how much we still want to allocate.
+ * Returns the amount that will actually be fulfilled in this step (never negative, never exceeds remaining need or remaining capacity).
+ */
+function computeAllocationStepImpl(lineItemQuantity, lineItemFulfilled, remainingToAllocate) {
+  const qty = Number(lineItemQuantity) || 0;
+  const already = Number(lineItemFulfilled) || 0;
+  const remaining = Math.max(0, Number(remainingToAllocate) || 0);
+
+  const canFulfill = Math.max(0, qty - already);
+  return Math.min(canFulfill, remaining);
+}
+
+function computeAllocationStep(lineItemQuantity, lineItemFulfilled, remainingToAllocate) {
+  return computeAllocationStepImpl(lineItemQuantity, lineItemFulfilled, remainingToAllocate);
+}
+
 module.exports = {
+  // Exported helpers for testing / reuse
+  sanitizeStoreUrl,
+  getDataPath,
+  getDatabasePath,
+
   initDatabase,
   getAllTasks,
   getTaskByVariantId,
@@ -1181,5 +1258,9 @@ module.exports = {
   bulkUpsertInventory,
   getAllInventory,
   getInventoryStats,
-  clearAllInventory
+  clearAllInventory,
+  // Pure business logic helpers (exported for unit testing + reuse in test helper)
+  calculateTaskStatus,
+  calculateOrderStatus,
+  computeAllocationStep
 };

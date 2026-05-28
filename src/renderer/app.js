@@ -1,4 +1,57 @@
-const { createApp, ref, computed, onMounted, onUnmounted, watch } = Vue;
+// Defensive Vue import — only exists in the browser bundle
+const VueLib = (typeof Vue !== 'undefined') ? Vue : {};
+const { createApp, ref, computed, onMounted, onUnmounted, watch } = VueLib;
+
+// ============================================================
+// PURE RENDERER HELPERS (extracted for testability)
+// These contain no Vue reactivity, no DOM, and no side effects.
+// ============================================================
+
+/**
+ * Pure: Calculate progress percentage for a task/variant.
+ */
+function progressPercentageImpl(task) {
+  if (!task || !task.total_quantity) return 0;
+  return Math.round((task.made_quantity / task.total_quantity) * 100);
+}
+
+/**
+ * Pure: Calculate progress percentage for an order.
+ */
+function orderProgressPercentageImpl(order) {
+  if (!order || !order.total_items) return 0;
+  return Math.round((order.fulfilled_items / order.total_items) * 100);
+}
+
+/**
+ * Pure: Human-friendly status labels.
+ */
+function formatStatusImpl(status) {
+  const statusMap = {
+    'pending': 'Pending',
+    'in_progress': 'In Progress',
+    'completed': 'Completed',
+    'fulfilled': 'Fulfilled',
+    'archived': 'Archived'
+  };
+  return statusMap[status] || status;
+}
+
+/**
+ * Pure: Format order date for display.
+ */
+function formatOrderDateImpl(dateStr) {
+  if (!dateStr) return '';
+  const date = new Date(dateStr);
+  if (isNaN(date.getTime())) return dateStr; // fallback for bad input
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+}
 
 const App = {
   setup() {
@@ -193,7 +246,8 @@ const App = {
         }
       } catch (e) {
         error.value = e.message || 'Failed to save credentials';
-        console.error('Save credentials error:', e);
+        // Security: renderer should never have secrets; still avoid dumping full error objects
+        console.error('Save credentials error (message only):', e?.message || e);
       } finally {
         savingCredentials.value = false;
       }
@@ -630,36 +684,21 @@ const App = {
       }
     }
 
+    // Thin wrappers that delegate to the pure Impl functions (keeps template bindings unchanged)
     function progressPercentage(task) {
-      if (task.total_quantity === 0) return 0;
-      return Math.round((task.made_quantity / task.total_quantity) * 100);
+      return progressPercentageImpl(task);
     }
 
     function orderProgressPercentage(order) {
-      if (order.total_items === 0) return 0;
-      return Math.round((order.fulfilled_items / order.total_items) * 100);
+      return orderProgressPercentageImpl(order);
     }
 
     function formatStatus(status) {
-      const statusMap = {
-        'pending': 'Pending',
-        'in_progress': 'In Progress',
-        'completed': 'Completed',
-        'fulfilled': 'Fulfilled',
-        'archived': 'Archived'
-      };
-      return statusMap[status] || status;
+      return formatStatusImpl(status);
     }
 
     function formatOrderDate(dateStr) {
-      const date = new Date(dateStr);
-      return date.toLocaleDateString('en-US', { 
-        month: 'short', 
-        day: 'numeric', 
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
+      return formatOrderDateImpl(dateStr);
     }
 
     function showFulfilledOrderToast(orders) {
@@ -955,4 +994,18 @@ const App = {
   }
 };
 
-createApp(App).mount('#app');
+// Only mount the actual Vue app in a real browser/Electron renderer.
+// When required by Jest (Node), this is skipped so we can safely export the pure helpers.
+if (typeof window !== 'undefined' && typeof Vue !== 'undefined') {
+  createApp(App).mount('#app');
+}
+
+// Export pure helpers for unit testing (Node/Jest can require() this file)
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    progressPercentage: progressPercentageImpl,
+    orderProgressPercentage: orderProgressPercentageImpl,
+    formatStatus: formatStatusImpl,
+    formatOrderDate: formatOrderDateImpl
+  };
+}
