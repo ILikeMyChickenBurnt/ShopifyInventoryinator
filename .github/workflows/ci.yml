@@ -1,0 +1,123 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+      - master
+      - develop
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y build-essential python3
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+        # Fast feedback job. Coverage is collected in the dedicated Docker job below
+        # so we get accurate numbers for native modules (especially database.js).
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Windows (no publish)
+        run: npm run build:win
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: dist/*
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y build-essential python3
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Linux (no publish)
+        run: npm run build:linux
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-build
+          path: dist/*.AppImage
+
+  # Coverage job — always runs inside Docker with a real compiled better-sqlite3.
+  # This is the single source of truth for coverage numbers (including database.js).
+  # The `test` job above only runs fast non-coverage tests (`npm test`) for quick feedback.
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and run coverage (real better-sqlite3)
+        run: |
+          # Use the dedicated real-db-coverage service. This builds a container with
+          # a clean from-source better-sqlite3 binary (required for real coverage on
+          # the native database module) and runs the full test suite + coverage.
+          docker compose -f docker-compose.test.yml build real-db-coverage
+          docker compose -f docker-compose.test.yml run --rm \
+            -e REAL_DB_COVERAGE=1 \
+            real-db-coverage
+
+      - name: Coverage Summary
+        run: |
+          echo "=== Real-DB Coverage Summary (authoritative) ==="
+          echo "This run used a real compiled better-sqlite3 inside Docker."
+          echo "Coverage report is available as 'coverage-report' artifact."
+        if: always()
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 30

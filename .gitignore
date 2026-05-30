@@ -4,9 +4,12 @@ node_modules/
 # Copied vendor files (copied from node_modules during install)
 src/renderer/vue.js
 
-# Build output
+# Build output (compiled main process + any other build artifacts)
+# The main process is now compiled to dist/main/ during development and production builds.
 dist/
 out/
+coverage/
+src/dist/
 
 # Database files
 data/*.db
@@ -15,6 +18,8 @@ data/*.db-wal
 
 # Config with credentials (shopify-config.json, config.json)
 data/*.json
+data/electron-session/
+data/electron-user-data/
 
 # Environment variables
 .env
@@ -36,3 +41,15 @@ Thumbs.db
 # Temporary files
 tmp/
 temp/
+
+# Grok Build TUI / local AI assistant configuration (project-scoped)
+# This includes local MCP servers, installed plugins, and .grok/config.toml
+.grok/
+
+# Generated dependency/security audit reports (created during npm audit / outdated analysis)
+audit-report.json
+outdated-report.json
+npm-outdated.json
+*-report.json
+*audit*.json
+*outdated*.json

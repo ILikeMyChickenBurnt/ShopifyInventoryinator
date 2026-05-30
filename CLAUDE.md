@@ -97,11 +97,77 @@ To access order data, the app requires **Protected Customer Data Access**:
 
 ## Shopify API Version
 
-Using Admin API version `2024-01`. Update in `src/main/shopify-api.js` if needed.
+**Current:** Admin GraphQL API version `2025-04` (updated April 2026).
+
+The upgrade from `2024-01` included a deliberate modernization of the data ingestion layer:
+- Primary source of "actionable" quantities is now `FulfillmentOrder` + `FulfillmentOrderLineItem.remainingQuantity`.
+- Legacy `orders` query + `fulfillableQuantity` path is retained for reference/fallback.
+- Inventory still uses the simple `inventoryQuantity` scalar (with notes that `InventoryLevel.quantities` is the modern model).
+
+See the detailed plan and rationale in the session plan file:
+`sessions/.../019e667e-944e-7bd1-95cd-aba820e00943/plan.md`
+
+Update the version constant and related queries in `src/main/shopify-api.js`.
 
 ## Security Considerations
 
 - Context isolation enabled (`contextIsolation: true`)
+- Node integration disabled in renderer (`nodeIntegration: false`)
+- Sandbox enabled (`sandbox: true`)
+- Preload script exposes limited API via `contextBridge`
+- CSP includes `unsafe-eval` (required for Vue runtime compiler)
+- Credentials stored locally only (never transmitted except to Shopify)
+
+## Testing & Security Culture (Established Patterns)
+
+This project went through a major modernization push in 2026 focused on two parallel cultural improvements:
+
+### 1. Testing Culture & Patterns
+We adopted a deliberate "pure function extraction" pattern to make previously untestable code (native DB, network-bound sync, complex allocation) highly testable:
+
+- **Core Technique**: Heavy pure `*Impl` functions (no `this`, no network, no DB) + thin delegating class methods. See:
+  - `src/main/shopify-api.js`: `aggregateByVariantFromFulfillmentOrdersImpl`, `extractOrdersForStorageFromFulfillmentOrdersImpl`, `extractFulfilledOrdersForStorageFromFulfillmentOrdersImpl`, `extractInventoryForStorageImpl`, etc.
+  - `src/main/database.js`: `calculateTaskStatusImpl`, `calculateOrderStatusImpl`, `computeAllocationStepImpl`
+  - `src/renderer/app.js`: formatting helpers (`progressPercentage`, `formatStatus`, etc.)
+
+- **Orchestrator Testing**: `src/main/sync-orchestrator.js` (`performSync(client, db?)`) accepts injectable dependencies. Use `tests/__mocks__/shopify-api.js` (MockShopifyClient) + real test DB (sql.js or Docker real binary) for feature tests in `tests/features/sync-flow.test.js`.
+
+- **Real Native DB Coverage**: `database.js` (the hardest file) cannot be meaningfully covered with the sql.js fallback. We use:
+  - `REAL_DB_COVERAGE=1` env var
+  - `Dockerfile.test` + `docker-compose.test.yml` with a clean `npm install better-sqlite3 --build-from-source` **after** `COPY . .`
+  - `tests/unit/database-production-basic.test.js` has a large `if (dbType === 'better-sqlite3')` block that exercises dozens of production paths when the real binary loads.
+
+- **Expectations for New Code**:
+  - New business logic should be extracted as pure `*Impl` functions with dedicated unit tests.
+  - Complex flows (sync, allocation, two-way reconciliation) get orchestrated feature tests using the Mock + injectable DB pattern.
+  - When adding native-dependent code, plan for the Docker real-binary path or accept that coverage will be measured primarily via the `REAL_DB_COVERAGE` job.
+  - PRs should not regress the real-DB coverage job.
+
+Current baseline (measured via the real-DB Docker job): ~84.5% statements / ~71.7% branches globally.
+
+**Important coverage note**: Coverage is collected in a single Docker-based job using a real compiled better-sqlite3 (`REAL_DB_COVERAGE=1`). The fast `test` job only runs non-coverage tests. This gives us one authoritative report with good numbers for database.js. See `docs/TESTING_PATTERNS.md`.
+
+### 2. Security Culture & Standards
+After the 2025–2026 npm supply-chain attacks, we treat dependency hygiene as ongoing work, not a one-time event:
+
+- Separate `security-audit.yml` (weekly scheduled + on PRs/pushes, fails on high+, opens GitHub issues on schedule failures).
+- Conservative Dependabot grouping + native module ignores.
+- `SECURITY.md` documents reporting process and known limitations.
+- No static Admin tokens; strict OAuth 2.0 with client_secret only in token exchange (never in renderer or logs).
+- Local-only credential storage (config.json / better-sqlite3 DB). Tokens are never sent anywhere except directly to Shopify.
+
+When working on auth, credentials, local storage, auto-update, or any data flowing from Shopify (especially orders with customer data), re-read the top of this file and the Security Considerations section.
+
+## How to Run the Important CI Jobs Locally
+
+- Normal tests + coverage: `npm run test:coverage`
+- Real native DB coverage (the one that actually exercises production `database.js`): 
+  `docker compose -f docker-compose.test.yml run --rm -e REAL_DB_COVERAGE=1 real-db-coverage`
+  (Requires Docker Desktop; first build can take 10–20 minutes due to from-source native compilation.)
+
+See also:
+- `docs/DEVELOPER_SETUP.md` for distributor/merchant onboarding
+- `docs/TESTING_PATTERNS.md` for the full testing culture, *Impl pattern, orchestrator testing strategy, and real-DB Docker technique.
 - Node integration disabled in renderer (`nodeIntegration: false`)
 - Sandbox enabled (`sandbox: true`)
 - Preload script exposes limited API via `contextBridge`
