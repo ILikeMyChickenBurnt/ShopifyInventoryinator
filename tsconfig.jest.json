@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "rootDir": ".",
+    "noEmit": true,
+    "isolatedModules": true,
+    "moduleDetection": "force"
+  },
+  "include": ["tests/**/*", "src/main/**/*"]
+}

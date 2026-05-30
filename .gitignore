@@ -4,9 +4,12 @@ node_modules/
 # Copied vendor files (copied from node_modules during install)
 src/renderer/vue.js
 
-# Build output
+# Build output (compiled main process + any other build artifacts)
+# The main process is now compiled to dist/main/ during development and production builds.
 dist/
 out/
+coverage/
+src/dist/
 
 # Database files
 data/*.db
@@ -15,6 +18,8 @@ data/*.db-wal
 
 # Config with credentials (shopify-config.json, config.json)
 data/*.json
+data/electron-session/
+data/electron-user-data/
 
 # Environment variables
 .env

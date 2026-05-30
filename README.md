@@ -13,6 +13,8 @@ A local desktop application for tracking Shopify order fulfillment using Electro
 
 ## Setup
 
+> **For developers working on the app itself**, see [DEVELOPER_SETUP.md](./DEVELOPER_SETUP.md) for the current recommended development workflow using the compiled main process.
+
 ### Prerequisites
 
 - Node.js 20+ and npm
@@ -73,9 +75,20 @@ Run the test suite:
 npm test
 ```
 
+Run static validation:
+```bash
+npm run typecheck
+npm run lint
+```
+
 See [docs/TESTING_PATTERNS.md](docs/TESTING_PATTERNS.md) for our established patterns (the `*Impl` extraction technique, orchestrated sync tests, and how we achieve real coverage on the native database using Docker).
 
 Tests normally use sql.js (pure JavaScript SQLite) to avoid native module issues in Jest. For high-confidence coverage on `database.js`, use the real better-sqlite3 Docker path described in the testing patterns guide.
+
+## Renderer Status
+
+- The production Electron UI lives in `src/renderer/` and builds to `dist/renderer`.
+- Authored application and test code are TypeScript-first. `npm run typecheck` validates main, renderer, and Jest test projects.
 
 ## Building
 
