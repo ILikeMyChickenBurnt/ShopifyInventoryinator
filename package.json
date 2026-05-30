@@ -65,12 +65,12 @@
     "wait-on": "^9.0.10"
   },
   "dependencies": {
-    "@apollo/client": "^3.8.8",
+    "@apollo/client": "^4.2.0",
     "better-sqlite3": "^12.10.0",
     "dotenv": "^16.3.1",
     "electron-log": "^5.4.4",
     "electron-updater": "^6.8.3",
-    "graphql": "^16.8.1",
+    "graphql": "^16.14.0",
     "node-fetch": "^2.7.0",
     "vue": "^3.5.34"
   },
