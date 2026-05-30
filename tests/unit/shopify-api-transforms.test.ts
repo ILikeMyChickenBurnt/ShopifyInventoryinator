@@ -328,6 +328,85 @@ describe('Shopify API Transforms', () => {
       expect(result[0].orderId).toBe('order-1001');
       expect(result[0].orderDate).toBe('2025-01-01');
     });
+
+    test('falls back to nested order name when fulfillment order name is missing', () => {
+      const result = extractOrdersForStorageFromFulfillmentOrders([
+        {
+          ...sampleOpenFulfillmentOrders[0],
+          orderName: '',
+          order: {
+            ...sampleOpenFulfillmentOrders[0].order,
+            name: '#fallback-name'
+          }
+        }
+      ]);
+
+      expect(result[0].orderName).toBe('#fallback-name');
+    });
+
+    test('uses line item id fallback paths and normalizes Default Title to empty', () => {
+      const result = extractOrdersForStorageFromFulfillmentOrders([
+        {
+          ...sampleOpenFulfillmentOrders[0],
+          lineItems: {
+            edges: [
+              {
+                node: {
+                  ...sampleOpenFulfillmentOrders[0].lineItems.edges[0].node,
+                  id: 'raw-line-id',
+                  lineItem: null,
+                  variant: {
+                    ...sampleOpenFulfillmentOrders[0].lineItems.edges[0].node.variant,
+                    title: 'Default Title'
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ]);
+
+      expect(result[0].lineItems[0].lineItemId).toBe('raw-line-id');
+      expect(result[0].lineItems[0].variantTitle).toBe('');
+    });
+
+    test('falls back to Unknown product and blank sku when data is missing', () => {
+      const result = extractOrdersForStorageFromFulfillmentOrders([
+        {
+          ...sampleOpenFulfillmentOrders[0],
+          lineItems: {
+            edges: [
+              {
+                node: {
+                  ...sampleOpenFulfillmentOrders[0].lineItems.edges[0].node,
+                  sku: null,
+                  productTitle: '',
+                  variant: {
+                    ...sampleOpenFulfillmentOrders[0].lineItems.edges[0].node.variant,
+                    sku: null,
+                    product: null
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ]);
+
+      expect(result[0].lineItems[0].productTitle).toBe('Unknown product');
+      expect(result[0].lineItems[0].sku).toBe('');
+    });
+
+    test('skips fulfillment orders missing nested order data', () => {
+      const result = extractOrdersForStorageFromFulfillmentOrders([
+        {
+          ...sampleOpenFulfillmentOrders[0],
+          order: null
+        }
+      ]);
+
+      expect(result).toEqual([]);
+    });
   });
 
   describe('extractFulfilledOrdersForStorageFromFulfillmentOrders', () => {
@@ -388,6 +467,68 @@ describe('Shopify API Transforms', () => {
       const li = result[0].lineItems[0];
       expect(li.quantity).toBe(li.fulfilledQuantity);
       expect(li.quantity).toBeGreaterThan(0);
+    });
+
+    test('uses fallback IDs and blanks Default Title for fulfilled extracts', () => {
+      const result = extractFulfilledOrdersForStorageFromFulfillmentOrders([
+        {
+          ...sampleClosedFulfillmentOrders[0],
+          lineItems: {
+            edges: [
+              {
+                node: {
+                  ...sampleClosedFulfillmentOrders[0].lineItems.edges[0].node,
+                  id: 'fulfilled-line-id',
+                  lineItem: null,
+                  variant: {
+                    ...sampleClosedFulfillmentOrders[0].lineItems.edges[0].node.variant,
+                    title: 'Default Title'
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ]);
+
+      expect(result[0].lineItems[0].lineItemId).toBe('fulfilled-line-id');
+      expect(result[0].lineItems[0].variantTitle).toBe('');
+    });
+
+    test('falls back to Unknown product and blank sku for fulfilled extracts', () => {
+      const result = extractFulfilledOrdersForStorageFromFulfillmentOrders([
+        {
+          ...sampleClosedFulfillmentOrders[0],
+          lineItems: {
+            edges: [
+              {
+                node: {
+                  ...sampleClosedFulfillmentOrders[0].lineItems.edges[0].node,
+                  sku: null,
+                  productTitle: '',
+                  variant: {
+                    ...sampleClosedFulfillmentOrders[0].lineItems.edges[0].node.variant,
+                    sku: null,
+                    product: null
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ]);
+
+      expect(result[0].lineItems[0].productTitle).toBe('Unknown product');
+      expect(result[0].lineItems[0].sku).toBe('');
+    });
+
+    test('skips fulfilled records without nested order or line item collections', () => {
+      expect(
+        extractFulfilledOrdersForStorageFromFulfillmentOrders([
+          { ...sampleClosedFulfillmentOrders[0], order: null },
+          { ...sampleClosedFulfillmentOrders[0], lineItems: null }
+        ])
+      ).toEqual([]);
     });
   });
 
@@ -459,6 +600,68 @@ describe('Shopify API Transforms', () => {
       expect(result).toHaveLength(1);
       expect(result[0].inventoryQuantity).toBe(42);
       expect(result[0].sku).toBe('INV-001');
+    });
+
+    test('legacy aggregateByVariant normalizes Default Title and uses Unknown product fallback', () => {
+      const result = aggregateByVariant([
+        {
+          ...sampleLegacyOrders[0],
+          lineItems: {
+            edges: [
+              {
+                node: {
+                  ...sampleLegacyOrders[0].lineItems.edges[0].node,
+                  title: '',
+                  variant: {
+                    ...sampleLegacyOrders[0].lineItems.edges[0].node.variant,
+                    title: 'Default Title',
+                    sku: '',
+                    product: null
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ]);
+
+      expect(result[0].variantTitle).toBe('');
+      expect(result[0].productTitle).toBe('Unknown product');
+      expect(result[0].sku).toBe('');
+    });
+
+    test('legacy extractOrdersForStorage blanks Default Title and skips missing variants', () => {
+      const result = extractOrdersForStorage([
+        {
+          ...sampleLegacyOrders[0],
+          lineItems: {
+            edges: [
+              {
+                node: {
+                  ...sampleLegacyOrders[0].lineItems.edges[0].node,
+                  variant: {
+                    ...sampleLegacyOrders[0].lineItems.edges[0].node.variant,
+                    title: 'Default Title',
+                    sku: null
+                  }
+                }
+              },
+              {
+                node: {
+                  id: 'skipped-line',
+                  title: 'Skipped',
+                  fulfillableQuantity: 2,
+                  variant: null
+                }
+              }
+            ]
+          }
+        }
+      ]);
+
+      expect(result[0].lineItems).toHaveLength(1);
+      expect(result[0].lineItems[0].variantTitle).toBe('');
+      expect(result[0].lineItems[0].sku).toBe('');
     });
   });
 
@@ -550,6 +753,33 @@ describe('Shopify API Transforms', () => {
       }];
       const result = extractInventoryForStorage(prodImage);
       expect(result[0].imageUrl).toBe('prod.jpg');
+    });
+
+    test('prefers the variant image, blanks Default Title, and defaults sku to empty', () => {
+      const result = extractInventoryForStorage([
+        {
+          id: 'p1',
+          title: 'Prod',
+          featuredImage: { url: 'prod.jpg' },
+          variants: {
+            edges: [
+              {
+                node: {
+                  id: 'v1',
+                  title: 'Default Title',
+                  sku: null,
+                  inventoryQuantity: 5,
+                  image: { url: 'variant.jpg' }
+                }
+              }
+            ]
+          }
+        }
+      ]);
+
+      expect(result[0].imageUrl).toBe('variant.jpg');
+      expect(result[0].variantTitle).toBe('');
+      expect(result[0].sku).toBe('');
     });
   });
 
