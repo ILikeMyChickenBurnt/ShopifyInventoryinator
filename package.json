@@ -46,7 +46,7 @@
     "@types/node": "^25.9.1",
     "@types/node-fetch": "^2.6.13",
     "@typescript-eslint/eslint-plugin": "^8.60.0",
-    "@typescript-eslint/parser": "^8.60.0",
+    "@typescript-eslint/parser": "^8.60.1",
     "@vitejs/plugin-vue": "^5.1.4",
     "concurrently": "^10.0.0",
     "electron": "^40.10.1",
